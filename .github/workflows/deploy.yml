@@ -1,0 +1,60 @@
+name: Деплой на GitHub Pages
+
+# Репозиторий публичный, логи видны всем (Р-01): ни один шаг не печатает
+# содержимое среза, токен или ответ API. Срезов здесь и нет — сборка
+# не ходит в репозитории данных.
+
+on:
+  push:
+    branches: [main]
+  # Позволяет запустить вручную из вкладки Actions, не делая пустой коммит.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Одновременно катится только один деплой.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Сборка
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Ядро семьи — подмодулем в src/shared (Р-02): без него сборки нет.
+          submodules: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      # ci, а не install: ставит ровно то, что в package-lock.json.
+      - run: npm ci
+
+      - run: npm test
+
+      # Типы проверяет tsc внутри build.
+      - run: npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    name: Публикация
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      # Требует Settings → Pages → Source = GitHub Actions.
+      - id: deployment
+        uses: actions/deploy-pages@v4
