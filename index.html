@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <!-- viewport-fit=cover нужен, чтобы работал env(safe-area-inset-*):
+         без него нижняя навигация уезжает под полосу жестов на iPhone. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#1b1c1e" />
+    <!-- Описание и заголовок сверяет с src/ui/title.ts тест-сторож. Заголовок
+         до запуска скрипта — имя по умолчанию; своё название (Р-03) ставит
+         приложение при старте. -->
+    <meta name="description" content="Неделя и месяц приложений семьи на одном экране. Работает без сети." />
+
+    <!-- Vite подставит сюда base при сборке. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon-180x180.png" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <title>Тотальный Учёт</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
