@@ -1,0 +1,70 @@
+/*
+ * Стили экранов «Тотального Учёта». Каркас — переменные, шапка экрана,
+ * нижняя панель, кнопки, поля, сворачивание, компоненты ядра — в
+ * `shared/styles.css`: он подключается первым, этот файл — после.
+ */
+
+:root {
+  /* Акцент бирюзовый: у соседей заняты оранжевый («Делу Время»), зелёный
+     («Трапеза»), синий («Дневники») и фиолетовый («Злотые»), и приложения
+     на одном телефоне не должны путаться. */
+  --accent: #0f7f78;
+  --on-accent: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent: #5cc8bf;
+    --on-accent: #1b1c1e;
+  }
+}
+
+/* Место будущего экрана: что здесь появится и когда. */
+.stub {
+  color: var(--muted);
+  padding: 16px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+}
+
+.stats {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 12px;
+}
+
+.stats td {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.stats .num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding-left: 12px;
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  margin: 0;
+}
+
+.facts dt {
+  color: var(--muted);
+}
+
+.facts dd {
+  margin: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.unit__name {
+  margin: 16px 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
