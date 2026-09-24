@@ -44,6 +44,9 @@ export type ReadOptions = {
 
 export const NOT_GIVEN = 'срез не отдаёт'
 
+/** `canWrite` (Я-16, Р-11): метаприложению запись не нужна и опасна. */
+export const WIDE_TOKEN = 'токен шире, чем чтение: у него есть право записи — перевыпусти с Contents: Read-only'
+
 /** Тексты причин. Имя репозитория — в тексте: его вписал человек, и сверять — с ним. */
 export function failureText(failure: Exclude<Failure, 'other'>, dataRepo: string): string {
   switch (failure) {
@@ -71,7 +74,7 @@ function failed(failure: Failure, dataRepo: string, text?: string): ReadResult {
  * «не видит», а после неё 404 — уже странность, а не опечатка.
  */
 function explain(error: unknown, dataRepo: string, offline: boolean, onInfo: boolean): ReadResult {
-  // Обрыв связи ловится на самом fetch: статус 0 у клиента ядра бывает
+  // Обрыв связи ловится на самом fetch (`guard`): статус 0 у клиента ядра бывает
   // и у ошибок без сервера — «дерево не поместилось», чужая кодировка.
   if (offline) return failed('offline', dataRepo)
   if (!(error instanceof GitHubError)) {
@@ -84,6 +87,48 @@ function explain(error: unknown, dataRepo: string, offline: boolean, onInfo: boo
   return failed('other', dataRepo, error.message)
 }
 
+/**
+ * `fetch`, который помнит обрыв связи. Статус 0 у клиента ядра бывает
+ * и у ошибок без сервера, поэтому «нет связи» узнаётся здесь.
+ */
+function guard(fetch: typeof globalThis.fetch): { fetch: typeof globalThis.fetch; offline: () => boolean } {
+  let offline = false
+  return {
+    fetch: async (input, init) => {
+      try {
+        return await fetch(input, init)
+      } catch (error) {
+        offline = true
+        throw error
+      }
+    },
+    offline: () => offline,
+  }
+}
+
+export type Access = { ok: true; fullName: string; canWrite: boolean } | { ok: false; text: string }
+
+/**
+ * Проверка доступа для «Настроек»: видит ли токен репозиторий и не шире ли
+ * он чтения. Полное имя — чтобы сверить с тем, что вписано (Я-25).
+ */
+export async function checkAccess({ dataRepo, token, fetch = globalThis.fetch }: Omit<ReadOptions, 'lastSha'>): Promise<Access> {
+  let repo: { owner: string; name: string }
+  try {
+    repo = parseRepo(dataRepo)
+  } catch {
+    return { ok: false, text: failureText('badRepo', dataRepo) }
+  }
+  const net = guard(fetch)
+  try {
+    const info = await createClient({ repo: { ...repo, branch: '' }, token, fetch: net.fetch }).info()
+    return { ok: true, fullName: info.fullName, canWrite: info.canWrite }
+  } catch (error) {
+    const result = explain(error, dataRepo, net.offline(), true)
+    return { ok: false, text: result.kind === 'failed' ? result.text : 'не проверено' }
+  }
+}
+
 /** Прочитать срез одного приложения. Не кидает: всё, что пошло не так, — в итоге словами. */
 export async function readSummary({ dataRepo, token, lastSha, fetch = globalThis.fetch }: ReadOptions): Promise<ReadResult> {
   let repo: { owner: string; name: string }
@@ -93,28 +138,20 @@ export async function readSummary({ dataRepo, token, lastSha, fetch = globalThis
     return failed('badRepo', dataRepo)
   }
 
-  let offline = false
-  const guarded: typeof globalThis.fetch = async (input, init) => {
-    try {
-      return await fetch(input, init)
-    } catch (error) {
-      offline = true
-      throw error
-    }
-  }
+  const net = guard(fetch)
 
   let canWrite = false
   let branch = ''
   try {
-    const info = await createClient({ repo: { ...repo, branch: '' }, token, fetch: guarded }).info()
+    const info = await createClient({ repo: { ...repo, branch: '' }, token, fetch: net.fetch }).info()
     canWrite = info.canWrite
     branch = info.defaultBranch
   } catch (error) {
-    return explain(error, dataRepo, offline, true)
+    return explain(error, dataRepo, net.offline(), true)
   }
 
   try {
-    const client = createClient({ repo: { ...repo, branch }, token, fetch: guarded })
+    const client = createClient({ repo: { ...repo, branch }, token, fetch: net.fetch })
     const head = await client.head()
     // Пустой репозиторий: ни одного коммита — и среза нет.
     if (head === null) return { kind: 'none', text: NOT_GIVEN, canWrite }
@@ -128,6 +165,6 @@ export async function readSummary({ dataRepo, token, lastSha, fetch = globalThis
       return { kind: 'broken', text: error instanceof Error ? error.message : 'срез не разобран', canWrite }
     }
   } catch (error) {
-    return explain(error, dataRepo, offline, false)
+    return explain(error, dataRepo, net.offline(), false)
   }
 }

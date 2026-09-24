@@ -9,9 +9,14 @@ import { backupNote, backupSummary, type SyncFacts } from '../shared/ui/backup.t
 import { Fold } from '../shared/ui/Fold.tsx'
 import { InstallNote } from '../shared/ui/Install.tsx'
 import { ReportBug } from '../shared/ui/Report.tsx'
+import type { App } from '../app/model.ts'
+import { checkAccess, WIDE_TOKEN, type Access } from '../reading/read.ts'
 import { DEFAULT_TITLE, MAX_TITLE } from '../ui/title.ts'
+import { useApps } from '../ui/useApps.ts'
 import { useBase, type BaseCounts } from '../ui/useBase.ts'
 import { saveTitle, useTitle } from '../ui/useTitle.ts'
+import { forgetToken, saveToken, useToken } from '../ui/useToken.ts'
+import { FAMILY_TAB } from './tabs.ts'
 
 /** Своей синхронизации нет (Р-02): копия данных — только файлом. */
 const NO_SYNC: SyncFacts = { state: 'off', lastAt: null }
@@ -30,7 +35,7 @@ function describe(error: unknown): string {
 
 /**
  * «Настройки» — шестерёнкой в шапке. Разделы свёрнуты, пока их не открыли:
- * сюда заходят за чем-то одним. Токен и проверка доступа — Этап 1.
+ * сюда заходят за чем-то одним; токен не вписан — его раздел открыт.
  */
 export function Settings() {
   const base = useBase()
@@ -41,10 +46,146 @@ export function Settings() {
         <h1>Настройки</h1>
       </header>
 
+      <TokenSection />
       <TitleSection />
       <DataCopy base={base} />
       <About base={base} />
     </>
+  )
+}
+
+/**
+ * Токен чтения (Я-16, Я-27): вписать, заменить, забыть, проверить доступ
+ * к репозиторию каждого приложения. Сам токен на экран не выводится.
+ */
+function TokenSection() {
+  const token = useToken()
+  const apps = useApps()
+  const [draft, setDraft] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [note, setNote] = useState('')
+  const [checks, setChecks] = useState<{ app: App; access: Access }[] | null>(null)
+  const [checking, setChecking] = useState(false)
+
+  async function save() {
+    try {
+      await saveToken(draft)
+      setDraft('')
+      setEditing(false)
+      setChecks(null)
+      setNote('Токен вписан')
+    } catch (error) {
+      setNote(`Не сохранилось: ${describe(error)}`)
+    }
+  }
+
+  async function forget() {
+    await forgetToken()
+    setChecks(null)
+    setNote('Токен забыт на этом устройстве')
+  }
+
+  async function check() {
+    if (!token || !apps) return
+    setChecking(true)
+    setChecks(null)
+    const results = await Promise.all(apps.map(async (app) => ({ app, access: await checkAccess({ dataRepo: app.dataRepo, token }) })))
+    setChecks(results)
+    setChecking(false)
+  }
+
+  const showInput = token === null || editing
+
+  return (
+    <Fold
+      id="settings:token"
+      title="Токен чтения"
+      summary={token === undefined ? undefined : token === null ? <span className="error">не вписан</span> : 'вписан'}
+      reveal={token === null}
+      folded
+    >
+      <p className="muted">
+        Fine-grained токен GitHub: Contents — Read-only, только репозитории данных семьи. Один на все
+        устройства; хранится только на этом, в копию данных не входит.
+      </p>
+
+      {showInput ? (
+        <form
+          className="form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void save()
+          }}
+        >
+          <label className="field">
+            <span>Токен</span>
+            <input
+              name="token"
+              type="password"
+              autoComplete="off"
+              spellCheck={false}
+              value={draft}
+              onChange={(event) => {
+                setDraft(event.target.value)
+                setNote('')
+              }}
+            />
+          </label>
+          <div className="row row--wrap">
+            <button type="submit" className="btn btn--primary" disabled={draft.trim() === ''}>
+              Сохранить
+            </button>
+            {editing && (
+              <button type="button" className="btn" onClick={() => setEditing(false)}>
+                Отмена
+              </button>
+            )}
+          </div>
+        </form>
+      ) : (
+        token && (
+          <div className="row row--wrap">
+            <button type="button" className="btn" onClick={() => void check()} disabled={checking || !apps || apps.length === 0}>
+              {checking ? 'Проверяю…' : 'Проверить доступ'}
+            </button>
+            <button type="button" className="btn" onClick={() => setEditing(true)}>
+              Заменить
+            </button>
+            <button type="button" className="btn btn--danger" onClick={() => void forget()}>
+              Забыть
+            </button>
+          </div>
+        )
+      )}
+
+      {token && apps?.length === 0 && (
+        <p className="muted">Проверять пока нечего: приложения добавляются во вкладке «{FAMILY_TAB.name}».</p>
+      )}
+
+      {checks && (
+        <ul className="plain access">
+          {checks.map(({ app, access }) => (
+            <li key={app.id}>
+              <strong>{app.name}</strong>
+              {access.ok ? (
+                <>
+                  <span className="muted"> — {access.fullName}: </span>
+                  {access.canWrite ? (
+                    <span className="error">{WIDE_TOKEN}</span>
+                  ) : (
+                    <span className="muted">только чтение</span>
+                  )}
+                </>
+              ) : (
+                <span className="error"> — {access.text}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {note && <p className="muted">{note}</p>}
+    </Fold>
   )
 }
 

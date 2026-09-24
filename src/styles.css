@@ -68,3 +68,27 @@
   font-weight: 600;
   color: var(--muted);
 }
+
+/* ─── «Семья» ───────────────────────────────────────────────────────────── */
+
+.family {
+  margin: 0 0 16px;
+}
+
+.family__app {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.family__app a {
+  color: var(--accent);
+  word-break: break-all;
+}
+
+/* Проверка доступа в «Настройках»: имя приложения и что видит токен. */
+.access {
+  margin: 12px 0;
+}
