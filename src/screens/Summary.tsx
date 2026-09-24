@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { App } from '../app/model.ts'
 import { CHANGES } from '../changes.ts'
-import { WIDE_TOKEN } from '../reading/read.ts'
 import { refreshApp, stateLine, stored, type AppState } from '../reading/refresh.ts'
 import { lastSeenAll } from '../reading/seen.ts'
 import { formatDateLong, formatPeriod } from '../shared/core/dates.ts'
@@ -89,7 +88,6 @@ export function Summary() {
     return map
   }, [states])
   const calling = apps ? calls(apps, latest) : null
-  const wide = [...states.values()].some((state) => state.canWrite)
 
   return (
     <>
@@ -117,11 +115,6 @@ export function Summary() {
         </section>
       )}
 
-      {wide && (
-        <p className="error">
-          {WIDE_TOKEN}. <Link to="/settings">Настройки</Link>
-        </p>
-      )}
 
       {token && apps && apps.length > 0 && (
         <div className="row refresh">

@@ -10,7 +10,7 @@ import { Fold } from '../shared/ui/Fold.tsx'
 import { InstallNote } from '../shared/ui/Install.tsx'
 import { ReportBug } from '../shared/ui/Report.tsx'
 import type { App } from '../app/model.ts'
-import { checkAccess, WIDE_TOKEN, type Access } from '../reading/read.ts'
+import { checkAccess, RIGHTS_UNKNOWN, type Access } from '../reading/read.ts'
 import { DEFAULT_TITLE, MAX_TITLE } from '../ui/title.ts'
 import { useApps } from '../ui/useApps.ts'
 import { useBase, type BaseCounts } from '../ui/useBase.ts'
@@ -56,7 +56,8 @@ export function Settings() {
 
 /**
  * Токен чтения (Я-16, Я-27): вписать, заменить, забыть, проверить доступ
- * к репозиторию каждого приложения. Сам токен на экран не выводится.
+ * к репозиторию каждого приложения. Сам токен на экран не выводится;
+ * его права GitHub не сообщает (Р-12).
  */
 function TokenSection() {
   const token = useToken()
@@ -168,14 +169,7 @@ function TokenSection() {
             <li key={app.id}>
               <strong>{app.name}</strong>
               {access.ok ? (
-                <>
-                  <span className="muted"> — {access.fullName}: </span>
-                  {access.canWrite ? (
-                    <span className="error">{WIDE_TOKEN}</span>
-                  ) : (
-                    <span className="muted">только чтение</span>
-                  )}
-                </>
+                <span className="muted"> — видит {access.fullName}</span>
               ) : (
                 <span className="error"> — {access.text}</span>
               )}
@@ -183,6 +177,7 @@ function TokenSection() {
           ))}
         </ul>
       )}
+      {checks && <p className="muted">{RIGHTS_UNKNOWN}.</p>}
 
       {note && <p className="muted">{note}</p>}
     </Fold>

@@ -455,7 +455,8 @@ async function scenario(profile) {
   await act(`byText('button', 'Проверить доступ').click();`)
   await waitFor(`document.querySelector('.access')`)
   const access = await screen()
-  check('проверка доступа: полное имя и «только чтение»', has(access, `${SHELF}: только чтение`), line(access, SHELF))
+  check('проверка доступа: полное имя репозитория', has(access, `видит ${SHELF}`), line(access, SHELF))
+  check('проверка доступа: права токена не выдумываются (Р-12)', has(access, 'права токена GitHub не сообщает'))
   check('проверка доступа: опечатка — «токен не видит репозиторий»', has(access, `токен не видит репозиторий ${TYPO}`), line(access, TYPO))
 
   // «Сводка» читает срезы.
@@ -469,6 +470,7 @@ async function scenario(profile) {
   check('«Сводка»: приложение без summary.json — «срез не отдаёт»', has(summary, 'срез не отдаёт'), line(summary, 'срез не'))
   check('«Сводка»: опечатка — «токен не видит репозиторий»', has(summary, `токен не видит репозиторий ${TYPO}`), line(summary, 'токен не видит'))
   check('«Сводка»: токен в экран не попал', !has(summary, TOKEN))
+  check('«Сводка»: нет ложного «токен шире, чем чтение» (Р-12)', !has(summary, 'шире'))
   const href = await run(`document.querySelector('.call a')?.getAttribute('href')`)
   check('«открыть» — сайт приложения и путь хеш-роутинга', href === 'https://example.org/shelf/#/books', String(href))
 

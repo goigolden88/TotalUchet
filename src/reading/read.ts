@@ -23,13 +23,13 @@ export type Failure = 'badRepo' | 'noAccess' | 'badToken' | 'noRights' | 'limit'
 
 export type ReadResult =
   /** Новый срез: его — в архив. */
-  | { kind: 'new'; sha: string; summary: Summary; canWrite: boolean }
+  | { kind: 'new'; sha: string; summary: Summary }
   /** Отпечаток тот же, что у последнего увиденного: файл не качали. */
-  | { kind: 'same'; canWrite: boolean }
+  | { kind: 'same' }
   /** `summary.json` нет — дело приложения, не ошибка (Я-16). */
-  | { kind: 'none'; text: string; canWrite: boolean }
+  | { kind: 'none'; text: string }
   /** Файл есть, но с формой не сходится: словами ядра. */
-  | { kind: 'broken'; text: string; canWrite: boolean }
+  | { kind: 'broken'; text: string }
   | { kind: 'failed'; failure: Failure; text: string }
 
 export type ReadOptions = {
@@ -44,8 +44,11 @@ export type ReadOptions = {
 
 export const NOT_GIVEN = 'срез не отдаёт'
 
-/** `canWrite` (Я-16, Р-11): метаприложению запись не нужна и опасна. */
-export const WIDE_TOKEN = 'токен шире, чем чтение: у него есть право записи — перевыпусти с Contents: Read-only'
+/**
+ * Права fine-grained токена GitHub не сообщает: `canWrite` из `info()` —
+ * права аккаунта на репозиторий, у владельца всегда `true` (Р-12).
+ */
+export const RIGHTS_UNKNOWN = 'права токена GitHub не сообщает: «только чтение» выбирается при выпуске — Contents: Read-only'
 
 /** Тексты причин. Имя репозитория — в тексте: его вписал человек, и сверять — с ним. */
 export function failureText(failure: Exclude<Failure, 'other'>, dataRepo: string): string {
@@ -106,11 +109,11 @@ function guard(fetch: typeof globalThis.fetch): { fetch: typeof globalThis.fetch
   }
 }
 
-export type Access = { ok: true; fullName: string; canWrite: boolean } | { ok: false; text: string }
+export type Access = { ok: true; fullName: string } | { ok: false; text: string }
 
 /**
- * Проверка доступа для «Настроек»: видит ли токен репозиторий и не шире ли
- * он чтения. Полное имя — чтобы сверить с тем, что вписано (Я-25).
+ * Проверка доступа для «Настроек»: видит ли токен репозиторий. Полное имя —
+ * чтобы сверить с тем, что вписано (Я-25). Права токена не проверяются (Р-12).
  */
 export async function checkAccess({ dataRepo, token, fetch = globalThis.fetch }: Omit<ReadOptions, 'lastSha'>): Promise<Access> {
   let repo: { owner: string; name: string }
@@ -122,7 +125,7 @@ export async function checkAccess({ dataRepo, token, fetch = globalThis.fetch }:
   const net = guard(fetch)
   try {
     const info = await createClient({ repo: { ...repo, branch: '' }, token, fetch: net.fetch }).info()
-    return { ok: true, fullName: info.fullName, canWrite: info.canWrite }
+    return { ok: true, fullName: info.fullName }
   } catch (error) {
     const result = explain(error, dataRepo, net.offline(), true)
     return { ok: false, text: result.kind === 'failed' ? result.text : 'не проверено' }
@@ -140,11 +143,9 @@ export async function readSummary({ dataRepo, token, lastSha, fetch = globalThis
 
   const net = guard(fetch)
 
-  let canWrite = false
   let branch = ''
   try {
     const info = await createClient({ repo: { ...repo, branch: '' }, token, fetch: net.fetch }).info()
-    canWrite = info.canWrite
     branch = info.defaultBranch
   } catch (error) {
     return explain(error, dataRepo, net.offline(), true)
@@ -154,15 +155,15 @@ export async function readSummary({ dataRepo, token, lastSha, fetch = globalThis
     const client = createClient({ repo: { ...repo, branch }, token, fetch: net.fetch })
     const head = await client.head()
     // Пустой репозиторий: ни одного коммита — и среза нет.
-    if (head === null) return { kind: 'none', text: NOT_GIVEN, canWrite }
+    if (head === null) return { kind: 'none', text: NOT_GIVEN }
     const entry = (await client.tree(head)).find((file) => file.path === SUMMARY_PATH)
-    if (!entry) return { kind: 'none', text: NOT_GIVEN, canWrite }
-    if (entry.sha === lastSha) return { kind: 'same', canWrite }
+    if (!entry) return { kind: 'none', text: NOT_GIVEN }
+    if (entry.sha === lastSha) return { kind: 'same' }
     const text = await client.blob(entry.sha)
     try {
-      return { kind: 'new', sha: entry.sha, summary: parseSummary(text), canWrite }
+      return { kind: 'new', sha: entry.sha, summary: parseSummary(text) }
     } catch (error) {
-      return { kind: 'broken', text: error instanceof Error ? error.message : 'срез не разобран', canWrite }
+      return { kind: 'broken', text: error instanceof Error ? error.message : 'срез не разобран' }
     }
   } catch (error) {
     return explain(error, dataRepo, net.offline(), false)

@@ -21,7 +21,7 @@ describe('чтение среза — доступ, потом файл (Р-05)'
   it('новый срез: доступ, голова, дерево, только summary.json', async () => {
     const github = fakeGitHub({ [REPO]: { files: FILES } })
     const result = await read(github)
-    expect(result).toEqual({ kind: 'new', sha: await blobSha(FILE.content), summary: SUMMARY, canWrite: false })
+    expect(result).toEqual({ kind: 'new', sha: await blobSha(FILE.content), summary: SUMMARY })
     expect(github.paths[0]).toBe(REPO)
     expect(github.paths.filter((path) => path.includes('/git/blobs/'))).toEqual([`${REPO}/git/blobs/${await blobSha(FILE.content)}`])
     expect(github.paths).toHaveLength(4)
@@ -29,13 +29,13 @@ describe('чтение среза — доступ, потом файл (Р-05)'
 
   it('тот же отпечаток — файл не качается', async () => {
     const github = fakeGitHub({ [REPO]: { files: FILES } })
-    expect(await read(github, await blobSha(FILE.content))).toEqual({ kind: 'same', canWrite: false })
+    expect(await read(github, await blobSha(FILE.content))).toEqual({ kind: 'same' })
     expect(github.paths.some((path) => path.includes('/git/blobs/'))).toBe(false)
   })
 
   it('нет summary.json — «срез не отдаёт», не ошибка (Я-16)', async () => {
     const result = await read(fakeGitHub({ [REPO]: { files: { 'meta.json': '{}' } } }))
-    expect(result).toEqual({ kind: 'none', text: NOT_GIVEN, canWrite: false })
+    expect(result).toEqual({ kind: 'none', text: NOT_GIVEN })
   })
 
   it('пустой репозиторий — тоже «срез не отдаёт»', async () => {
@@ -74,9 +74,10 @@ describe('чтение среза — доступ, потом файл (Р-05)'
     expect(result.kind === 'broken' && result.text).toContain('не сходится с формой')
   })
 
-  it('токен с записью — canWrite (Р-11)', async () => {
+  it('право записи у аккаунта — не повод для тревоги: права токена GitHub не сообщает (Р-12)', async () => {
     const result = await read(fakeGitHub({ [REPO]: { push: true, files: FILES } }))
-    expect(result.kind === 'new' && result.canWrite).toBe(true)
+    expect(result.kind).toBe('new')
+    expect(result).not.toHaveProperty('canWrite')
   })
 
   it('кривое имя репозитория — без запросов', async () => {

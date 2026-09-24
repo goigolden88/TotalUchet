@@ -1,5 +1,5 @@
 /**
- * Обновление одного приложения: чтение среза и архив вместе (Р-05, Р-08, Р-11).
+ * Обновление одного приложения: чтение среза и архив вместе (Р-05, Р-08; Р-11, п. 2).
  *
  * Что бы ни случилось с чтением, показывается последний увиденный срез,
  * если он есть, — со своей датой прочтения. Ошибка одного приложения
@@ -18,8 +18,6 @@ export type AppState = {
   status: 'fresh' | 'none' | 'broken' | Failure
   /** Слова состояния; у свежего — пусто. */
   text: string
-  /** Токен шире, чем чтение (Р-11). */
-  canWrite: boolean
 }
 
 /** Прочитать срез приложения и положить новый в архив. Не кидает. */
@@ -34,23 +32,23 @@ export async function refreshApp(
 
   switch (result.kind) {
     case 'new':
-      return { seen: await remember(app.id, result.sha, result.summary, now()), status: 'fresh', text: '', canWrite: result.canWrite }
+      return { seen: await remember(app.id, result.sha, result.summary, now()), status: 'fresh', text: '' }
     case 'same':
       // Тот же отпечаток бывает только у увиденного, но база могла опустеть между шагами.
       return last
-        ? { seen: await confirm(last, now()), status: 'fresh', text: '', canWrite: result.canWrite }
-        : { seen: undefined, status: 'other', text: 'срез пропал из архива — нажми «Обновить»', canWrite: result.canWrite }
+        ? { seen: await confirm(last, now()), status: 'fresh', text: '' }
+        : { seen: undefined, status: 'other', text: 'срез пропал из архива — нажми «Обновить»' }
     case 'none':
     case 'broken':
-      return { seen: last, status: result.kind, text: result.text, canWrite: result.canWrite }
+      return { seen: last, status: result.kind, text: result.text }
     case 'failed':
-      return { seen: last, status: result.failure, text: result.text, canWrite: false }
+      return { seen: last, status: result.failure, text: result.text }
   }
 }
 
 /** Состояние, пока не читали: последний увиденный из архива, без сети. */
 export function stored(seen: Seen | undefined): AppState {
-  return { seen, status: 'fresh', text: '', canWrite: false }
+  return { seen, status: 'fresh', text: '' }
 }
 
 /**
