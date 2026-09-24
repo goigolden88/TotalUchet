@@ -98,5 +98,6 @@ export function shortDate(day: DateStr): string {
 export function shortDateTime(iso: string): string {
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return iso
-  return at.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${pad(at.getDate())}.${pad(at.getMonth() + 1)} ${pad(at.getHours())}:${pad(at.getMinutes())}`
 }

@@ -92,3 +92,93 @@
 .access {
   margin: 12px 0;
 }
+
+/* ─── «Сводка» ──────────────────────────────────────────────────────────── */
+
+.refresh {
+  margin-bottom: 16px;
+}
+
+.block h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+.calls__app + .calls__app {
+  margin-top: 8px;
+}
+
+.call__head,
+.metric__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.call__head a {
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* Основание — всегда видно, под строкой (Р-04). */
+.basis {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Переключатель отрезка: четыре кнопки, на узком телефоне — две строки. */
+.switch {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.switch__btn {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.switch__btn--on {
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.period {
+  margin: 0 0 16px;
+}
+
+.metrics {
+  margin-top: 12px;
+}
+
+.metric {
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+
+.metric:last-child {
+  border-bottom: 0;
+}
+
+/* Значение — одно, без цвета по оценке (Я-15). */
+.metric__value {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  font-weight: 600;
+}
+
+.metric__value.muted {
+  font-weight: 400;
+  white-space: normal;
+  text-align: right;
+}

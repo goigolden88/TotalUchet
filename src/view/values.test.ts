@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatMinutes, formatMoney, formatNumber, formatShare, formatValue, shortDate } from './values.ts'
+import { formatMinutes, formatMoney, formatNumber, formatShare, formatValue, shortDate, shortDateTime } from './values.ts'
 
 /** Пробелы `Intl` — неразрывные; сравниваем по смыслу, а не по виду пробела. */
 function plain(text: string): string {
@@ -47,7 +47,9 @@ describe('значение словами — одно за раз (Я-15)', () 
     expect(formatValue({ unknown: 'no-data', text: 'сеансов нет' })).toEqual({ text: 'не известно — сеансов нет', muted: true })
   })
 
-  it('короткая дата — ДД.ММ', () => {
+  it('короткая дата — ДД.ММ; время прочтения — ДД.ММ ЧЧ:ММ по часам устройства', () => {
     expect(shortDate('2026-09-07')).toBe('07.09')
+    expect(shortDateTime(new Date(2026, 8, 7, 9, 5).toISOString())).toBe('07.09 09:05')
+    expect(shortDateTime('не время')).toBe('не время')
   })
 })

@@ -26,6 +26,14 @@ import { fileURLToPath } from 'node:url'
 // Имя по умолчанию — из того же места, что у приложения (Р-03): Node 24
 // читает TypeScript без сборки, а в title.ts нет ничего, кроме строк.
 import { DEFAULT_TITLE } from '../src/ui/title.ts'
+// Подставной GitHub и выдуманный срез «Полки» ядра — те же, что в тестах
+// чтения (Р-01): ни настоящего репозитория, ни токена, ни среза.
+import { fakeGitHub } from '../src/reading/fakeGitHub.ts'
+import { addDays, addMonths, monthOf, today } from '../src/shared/core/dates.ts'
+import { buildSummary, summaryFile } from '../src/shared/core/summary.ts'
+import { shelfSummary } from '../src/shared/testing/shelf.ts'
+import { CHOICES, findPeriod, screenPeriod } from '../src/view/periods.ts'
+import { formatValue } from '../src/view/values.ts'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 
@@ -119,6 +127,11 @@ function connect(url) {
       return
     }
 
+    if (message.method === 'Fetch.requestPaused') {
+      void answerGitHub(message.params)
+      return
+    }
+
     if (message.method === 'Runtime.exceptionThrown') {
       const details = message.params.exceptionDetails
       problems.push(details.exception?.description ?? details.text)
@@ -183,6 +196,9 @@ const HELPERS = `
   };
   const byText = (tag, label) =>
     [...document.querySelectorAll(tag)].find((el) => el.textContent.trim() === label);
+  // «Сохранить» на «Настройках» не одна: у токена — своя.
+  const saveTitle = () =>
+    document.querySelector('input[name=title]').closest('form').querySelector('button[type=submit]').click();
   const startsWith = (tag, prefix) =>
     [...document.querySelectorAll(tag)].find((el) => el.textContent.trim().startsWith(prefix));
 `
@@ -235,6 +251,89 @@ async function offline(on) {
   })
 }
 
+// ─── Подставной GitHub ─────────────────────────────────────────────────────
+
+/** Выдуманный токен: настоящий в прогон не попадает никогда (Р-01). */
+const TOKEN = 'fake-read-token'
+
+/** Выдуманные репозитории данных: срез есть, среза нет, опечатка — нет вовсе. */
+const SHELF = 'someone/shelf-data'
+const BED = 'someone/bed-data'
+const TYPO = 'someone/typo-data'
+
+const DAY = today()
+
+/** Срез «Полки» на сегодня: по сеансу в каждом из четырёх отрезков. */
+const SLICE = (() => {
+  const at = `${DAY}T08:00:00.000Z`
+  const sessions = [
+    { id: 's1', updatedAt: at, date: DAY, bookId: 'b', minutes: 25 },
+    { id: 's2', updatedAt: at, date: addDays(DAY, -7), bookId: 'b', minutes: 70 },
+    { id: 's3', updatedAt: at, date: `${addMonths(monthOf(DAY), -1)}-03`, bookId: 'b', minutes: 130 },
+  ]
+  const books = [{ id: 'b', updatedAt: at, title: 'Книга', addedOn: null }]
+  return buildSummary(shelfSummary({ sessions, books }, DAY), { sessions, books }, DAY)
+})()
+
+const FILE = summaryFile(SLICE)
+
+const github = fakeGitHub({
+  [SHELF]: { files: { [FILE.path]: FILE.content, 'meta.json': '{"app":"polka","schemaVersion":1}\n' } },
+  [BED]: { files: { 'meta.json': '{"app":"bed","schemaVersion":1}\n' } },
+})
+
+/** Нет связи с GitHub — запросы обрываются, как без сети. */
+let githubDown = false
+
+const CORS = [
+  { name: 'Access-Control-Allow-Origin', value: '*' },
+  { name: 'Access-Control-Allow-Headers', value: 'Authorization, Accept, X-GitHub-Api-Version, Content-Type' },
+  { name: 'Access-Control-Allow-Methods', value: 'GET, OPTIONS' },
+]
+
+/** Ответ на перехваченный запрос к api.github.com — подставным GitHub. */
+async function answerGitHub({ requestId, request }) {
+  if (githubDown) {
+    await send('Fetch.failRequest', { requestId, errorReason: 'InternetDisconnected' })
+    return
+  }
+  if (request.method === 'OPTIONS') {
+    await send('Fetch.fulfillRequest', { requestId, responseCode: 204, responseHeaders: CORS })
+    return
+  }
+  const response = await github.fetch(request.url, { headers: request.headers })
+  const body = Buffer.from(await response.text()).toString('base64')
+  await send('Fetch.fulfillRequest', {
+    requestId,
+    responseCode: response.status,
+    responseHeaders: [...CORS, ...[...response.headers].map(([name, value]) => ({ name, value }))],
+    body,
+  })
+}
+
+/** Добавить приложение в «Семье» формой. */
+async function addApp(name, repo, site) {
+  await act(`byText('button', 'Добавить приложение').click();`)
+  await sleep(300)
+  await act(`
+    set(document.querySelector('input[name=name]'), ${JSON.stringify(name)});
+    set(document.querySelector('input[name=dataRepo]'), ${JSON.stringify(repo)});
+    set(document.querySelector('input[name=site]'), ${JSON.stringify(site)});
+  `)
+  await sleep(100)
+  await act(`byText('button', 'Сохранить').click();`)
+  await sleep(500)
+}
+
+/** Что «Сводка» должна показать строкой «Чтение» на отрезке — теми же функциями показа. */
+function expectedReading(choice) {
+  const view = findPeriod(SLICE, screenPeriod(choice, DAY))
+  if (!view.found) return view.text
+  const metrics = view.period.metrics
+  if ('unknown' in metrics) return formatValue(metrics).text
+  return formatValue(metrics[0].value).text
+}
+
 // ─── Сценарий ──────────────────────────────────────────────────────────────
 
 /**
@@ -257,13 +356,14 @@ async function scenario(profile) {
   check('«Сводка» открылась с названием по умолчанию', has(start, DEFAULT_TITLE), start.replace(/\s+/g, ' ').slice(0, 80))
   check('вкладки «Сводка» и «Семья»', has(start, 'Сводка') && has(start, 'Семья'))
   check('свежей установке «Что нового» не показано', !has(start, 'Что нового'))
+  check('без токена — «не настроено» со ссылкой в «Настройки»', has(start, 'нет токена чтения'), line(start, 'токен'))
   check('заголовок вкладки — название', (await run('document.title')) === DEFAULT_TITLE)
 
   // ── «Семья» — вкладкой, по адресу.
   await act(`document.querySelector('nav.tabs a[href="#/family"]').click();`)
   await sleep(700)
   const family = await screen()
-  check('«Семья» открылась вкладкой', has(family, 'приложения семьи'), line(family, 'приложения'))
+  check('«Семья» открылась вкладкой, приложений нет', has(family, 'Приложений пока нет'), line(family, 'приложени'))
 
   // ── Незнакомый адрес — на «Сводку».
   await go('/nowhere')
@@ -276,7 +376,7 @@ async function scenario(profile) {
   await sleep(300)
   await act(`
     set(document.querySelector('input[name=title]'), 'Моя неделя');
-    byText('button', 'Сохранить').click();
+    saveTitle();
   `)
   await sleep(500)
   check('своё название — в заголовке вкладки', (await run('document.title')) === 'Моя неделя')
@@ -294,7 +394,7 @@ async function scenario(profile) {
     byText('button', 'Как было').click();
   `)
   await sleep(200)
-  await act(`byText('button', 'Сохранить').click();`)
+  await act(`saveTitle();`)
   await sleep(500)
   check('«Как было» возвращает имя по умолчанию', (await run('document.title')) === DEFAULT_TITLE)
 
@@ -318,6 +418,78 @@ async function scenario(profile) {
   await act(`byText('button', 'Сообщить об ошибке').click();`)
   await sleep(500)
   check('отчёт об ошибке открылся на заглушке синхронизации (Р-09)', has(await screen(), 'Открыть на GitHub') || has(await screen(), 'Скопировать'))
+
+  // ── Этап 1: срезы с подставного GitHub. Запросы к api.github.com
+  // до сети не доходят — отвечает подставной.
+  await send('Fetch.enable', { patterns: [{ urlPattern: 'https://api.github.com/*' }] })
+
+  // «Семья»: три приложения — со срезом, без среза, с опечаткой в имени (Р-10).
+  await go('/family')
+  await addApp('Полка', `https://github.com/${SHELF}`, 'https://example.org/shelf')
+  await addApp('Грядка', BED, 'https://example.org/bed/')
+  await addApp('Опечатка', TYPO, 'https://example.org/typo/')
+  const listed = await screen()
+  check('«Семья»: три приложения добавлены', has(listed, 'Полка') && has(listed, 'Грядка') && has(listed, 'Опечатка'))
+  check('«Семья»: ссылка на репозиторий сведена к «владелец/имя»', has(listed, SHELF) && !has(listed, `github.com/${SHELF}`))
+  check('«Семья»: у сайта слеш в конце', has(listed, 'https://example.org/shelf/'))
+
+  // Поправить: имя меняется, запись та же.
+  await act(`[...document.querySelectorAll('.family__app')].find((el) => el.textContent.includes('Опечатка')).querySelector('button').click();`)
+  await sleep(300)
+  await act(`set(document.querySelector('input[name=name]'), 'Опечатка в имени');`)
+  await sleep(100)
+  await act(`byText('button', 'Сохранить').click();`)
+  await sleep(500)
+  check('«Семья»: приложение поправлено', has(await screen(), 'Опечатка в имени'))
+
+  // «Настройки»: токен и проверка доступа.
+  await go('/settings')
+  const tokenOpen = await screen()
+  check('без токена его раздел в «Настройках» открыт', has(tokenOpen, 'Fine-grained'), line(tokenOpen, 'токен'))
+  await act(`set(document.querySelector('input[name=token]'), ${JSON.stringify(TOKEN)});`)
+  await sleep(100)
+  await act(`[...document.querySelectorAll('form')].find((form) => form.querySelector('input[name=token]')).querySelector('button[type=submit]').click();`)
+  await sleep(500)
+  const tokenSaved = await screen()
+  check('токен вписан, на экране его нет', has(tokenSaved, 'Токен вписан') && !has(tokenSaved, TOKEN))
+  await act(`byText('button', 'Проверить доступ').click();`)
+  await waitFor(`document.querySelector('.access')`)
+  const access = await screen()
+  check('проверка доступа: полное имя и «только чтение»', has(access, `${SHELF}: только чтение`), line(access, SHELF))
+  check('проверка доступа: опечатка — «токен не видит репозиторий»', has(access, `токен не видит репозиторий ${TYPO}`), line(access, TYPO))
+
+  // «Сводка» читает срезы.
+  await go('/')
+  await waitFor(`document.querySelector('.refresh button') && !document.querySelector('.refresh button').disabled && document.body.innerText.includes('посчитано')`)
+  const summary = await screen()
+  check('«Сводка»: свежесть — «посчитано · по записям по»', has(summary, 'посчитано') && has(summary, 'по записям по'), line(summary, 'посчитано'))
+  check('«Сводка»: строка с основанием', has(summary, 'Чтение') && has(summary, 'по 1 сеансам'), line(summary, 'сеанс'))
+  check('«Сводка»: идущая неделя — «идёт, по»', has(summary, 'идёт, по'), line(summary, 'идёт'))
+  check('«Сводка»: «Зовут» — пункт со ссылкой', has(summary, 'Зовут') && has(summary, 'Книги без даты') && has(summary, 'открыть'), line(summary, 'Книги'))
+  check('«Сводка»: приложение без summary.json — «срез не отдаёт»', has(summary, 'срез не отдаёт'), line(summary, 'срез не'))
+  check('«Сводка»: опечатка — «токен не видит репозиторий»', has(summary, `токен не видит репозиторий ${TYPO}`), line(summary, 'токен не видит'))
+  check('«Сводка»: токен в экран не попал', !has(summary, TOKEN))
+  const href = await run(`document.querySelector('.call a')?.getAttribute('href')`)
+  check('«открыть» — сайт приложения и путь хеш-роутинга', href === 'https://example.org/shelf/#/books', String(href))
+
+  // Все четыре отрезка переключаются; число — отрезка экрана, найденного по концам.
+  for (const choice of CHOICES) {
+    await act(`byText('button', ${JSON.stringify(choice.label)}).click();`)
+    await sleep(200)
+    const shown = await run(`[...document.querySelectorAll('.slice')].find((el) => el.textContent.includes('Полка'))?.innerText ?? ''`)
+    const want = expectedReading(choice.id)
+    check(`отрезок «${choice.label}» — ${want}`, has(shown, want), shown.replace(/\s+/g, ' ').slice(0, 120))
+  }
+
+  // Без связи с GitHub — последний увиденный с датой прочтения.
+  githubDown = true
+  await act(`byText('button', 'Обновить').click();`)
+  await sleep(300)
+  await waitFor(`!document.querySelector('.refresh button').disabled`)
+  const cut = await screen()
+  check('без связи — «прочитан …, сейчас нет связи» и срез на месте', has(cut, 'сейчас нет связи') && has(cut, 'Чтение'), line(cut, 'нет связи'))
+  githubDown = false
+  await send('Fetch.disable')
 
   // ── Без сети — из кеша работника. Последним: дальше сети нет.
   const controlled = await waitFor('navigator.serviceWorker?.controller')
