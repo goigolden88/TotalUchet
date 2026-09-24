@@ -478,10 +478,20 @@ async function scenario(profile) {
   for (const choice of CHOICES) {
     await act(`byText('button', ${JSON.stringify(choice.label)}).click();`)
     await sleep(200)
-    const shown = await run(`[...document.querySelectorAll('.slice')].find((el) => el.textContent.includes('Полка'))?.innerText ?? ''`)
+    const shown = await run(`[...document.querySelectorAll('section.block')].find((el) => el.querySelector('.fold__btn')?.textContent === 'Полка')?.innerText ?? ''`)
     const want = expectedReading(choice.id)
     check(`отрезок «${choice.label}» — ${want}`, has(shown, want), shown.replace(/\s+/g, ' ').slice(0, 120))
   }
+
+  // Блок приложения и «Зовут» сворачиваются; у свёрнутого — итог рядом с заголовком.
+  await act(`byText('button', 'Полка').click(); byText('button', 'Зовут').click();`)
+  await sleep(300)
+  const folded = await screen()
+  check('блок приложения свёрнут — у заголовка «посчитано»', !has(folded, 'Чтение') && has(folded, '· посчитано'), line(folded, 'Полка'))
+  const namedCaller = /Зовут\s*·\s*Полка/i.test(folded.replace(/ /g, ' '))
+  check('«Зовут» свёрнуто — у заголовка кто зовёт', !has(folded, 'Книги без даты') && namedCaller, line(folded, 'Зовут'))
+  await act(`byText('button', 'Полка').click(); byText('button', 'Зовут').click();`)
+  await sleep(300)
 
   // Без связи с GitHub — последний увиденный с датой прочтения.
   githubDown = true

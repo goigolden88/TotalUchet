@@ -7,6 +7,7 @@ import { lastSeenAll } from '../reading/seen.ts'
 import { formatDateLong, formatPeriod } from '../shared/core/dates.ts'
 import type { Summary as Slice, SummaryPeriod } from '../shared/core/summary.ts'
 import { WhatsNew } from '../shared/screens/WhatsNew.tsx'
+import { Fold } from '../shared/ui/Fold.tsx'
 import { useWhatsNew } from '../shared/screens/useWhatsNew.ts'
 import { useToday } from '../shared/ui/useToday.ts'
 import { useApps } from '../ui/useApps.ts'
@@ -15,7 +16,7 @@ import { useTitle } from '../ui/useTitle.ts'
 import { useToken } from '../ui/useToken.ts'
 import { calls } from '../view/attention.ts'
 import { CHOICES, DEFAULT_CHOICE, findPeriod, freshness, screenPeriod, type Choice } from '../view/periods.ts'
-import { formatValue } from '../view/values.ts'
+import { formatValue, shortDate } from '../view/values.ts'
 import { Head } from './Head.tsx'
 import { FAMILY_TAB } from './tabs.ts'
 
@@ -26,6 +27,9 @@ const CALM: ReadonlySet<AppState['status']> = new Set(['fresh', 'none', 'offline
  * «Сводка» — главный экран (Р-04, Р-06). Сверху «Зовут», ниже — отрезок
  * переключателем и блок каждого приложения. Показывает, а не досчитывает
  * (Я-15): строки — в порядке хозяина, значение — одно за раз.
+ *
+ * «Зовут» и блоки приложений сворачиваются; у свёрнутого — итог рядом
+ * с заголовком.
  *
  * Сразу — последние увиденные срезы из архива; затем каждое приложение
  * читается само по себе, ошибка одного не трогает остальных (Р-05).
@@ -125,8 +129,7 @@ export function Summary() {
       )}
 
       {calling?.anySeen && (
-        <section className="block calls">
-          <h2>Зовут</h2>
+        <Fold id="summary:calls" title="Зовут" summary={calling.groups.length === 0 ? 'не зовут' : calling.groups.map((group) => group.app.name).join(', ')}>
           {calling.groups.length === 0 ? (
             <p className="muted">Приложения сейчас не зовут.</p>
           ) : (
@@ -153,7 +156,7 @@ export function Summary() {
               </div>
             ))
           )}
-        </section>
+        </Fold>
       )}
 
       {apps && apps.length > 0 && (
@@ -187,10 +190,16 @@ function AppBlock({ app, state, screen }: { app: App; state: AppState | undefine
   const summary = state?.seen?.summary
   const line = state ? stateLine(state) : ''
   const view = summary ? findPeriod(summary, screen) : null
+  // Свёрнутый блок говорит главное: не прочиталось — или когда посчитан.
+  const brief =
+    state && !CALM.has(state.status) ? (
+      <span className="error">не прочитан</span>
+    ) : summary ? (
+      `посчитано ${shortDate(summary.computedOn)}`
+    ) : undefined
 
   return (
-    <section className="block slice">
-      <h2>{app.name}</h2>
+    <Fold id={`summary:app:${app.id}`} title={app.name} summary={brief}>
       {summary && <p className="muted">{freshness(summary)}</p>}
       {line && <p className={state && CALM.has(state.status) ? 'muted' : 'error'}>{line}</p>}
       {!state && <p className="muted">…</p>}
@@ -219,6 +228,6 @@ function AppBlock({ app, state, screen }: { app: App; state: AppState | undefine
           )}
         </>
       )}
-    </section>
+    </Fold>
   )
 }
