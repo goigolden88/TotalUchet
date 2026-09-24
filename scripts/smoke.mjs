@@ -201,6 +201,9 @@ const HELPERS = `
     document.querySelector('input[name=title]').closest('form').querySelector('button[type=submit]').click();
   const startsWith = (tag, prefix) =>
     [...document.querySelectorAll(tag)].find((el) => el.textContent.trim().startsWith(prefix));
+  // Свёрнутый блок по заголовку: у «Сводки» и «Семьи» приложения — блоками Fold.
+  const fold = (title) =>
+    [...document.querySelectorAll('section.block')].find((el) => el.querySelector('.fold__btn')?.textContent === title);
 `
 
 /** Шаг сценария: тело выполняется на странице с помощниками выше. */
@@ -432,10 +435,12 @@ async function scenario(profile) {
   check('«Семья»: три приложения добавлены', has(listed, 'Полка') && has(listed, 'Грядка') && has(listed, 'Опечатка'))
   check('«Семья»: ссылка на репозиторий сведена к «владелец/имя»', has(listed, SHELF) && !has(listed, `github.com/${SHELF}`))
   check('«Семья»: у сайта слеш в конце', has(listed, 'https://example.org/shelf/'))
+  check('«Семья» без токена — «не настроено» со ссылкой в «Настройки»', has(listed, 'нет токена чтения'), line(listed, 'токен'))
 
-  // Поправить: имя меняется, запись та же.
-  await act(`[...document.querySelectorAll('.family__app')].find((el) => el.textContent.includes('Опечатка')).querySelector('button').click();`)
+  // Поправить: форма — в блоке приложения; имя меняется, запись та же.
+  await act(`[...fold('Опечатка').querySelectorAll('button')].find((el) => el.textContent === 'Поправить').click();`)
   await sleep(300)
+  check('«Семья»: форма правки — в блоке приложения', (await act(`return Boolean(fold('Опечатка')?.querySelector('input[name=name]'));`)) === true)
   await act(`set(document.querySelector('input[name=name]'), 'Опечатка в имени');`)
   await sleep(100)
   await act(`byText('button', 'Сохранить').click();`)
@@ -492,6 +497,38 @@ async function scenario(profile) {
   check('«Зовут» свёрнуто — у заголовка кто зовёт', !has(folded, 'Книги без даты') && namedCaller, line(folded, 'Зовут'))
   await act(`byText('button', 'Полка').click(); byText('button', 'Зовут').click();`)
   await sleep(300)
+
+  // «Семья»: состояние среза у каждого — теми же словами, что на «Сводке» (Р-13).
+  await go('/family')
+  await waitFor(`document.body.innerText.includes('токен не видит') && document.body.innerText.includes('посчитано')`)
+  const states = await screen()
+  check('«Семья»: у прочитанного — «посчитано · по записям по»', has(states, 'по записям по'), line(states, 'по записям'))
+  check('«Семья»: без summary.json — «срез не отдаёт»', has(states, 'срез не отдаёт'), line(states, 'срез не'))
+  check('«Семья»: опечатка — «токен не видит репозиторий»', has(states, `токен не видит репозиторий ${TYPO}`), line(states, 'токен не видит'))
+  check('«Семья»: токен в экран не попал', !has(states, TOKEN))
+
+  // Свёрнутые блоки приложений: у заголовка — итог.
+  await act(`byText('button', 'Полка').click(); byText('button', 'Грядка').click(); byText('button', 'Опечатка в имени').click();`)
+  await sleep(300)
+  const briefs = (await screen()).replace(/ /g, ' ')
+  check('«Семья»: свёрнуто — у прочитанного «посчитано»', /Полка\s*·\s*посчитано/i.test(briefs) && !has(briefs, SHELF), line(briefs, 'Полка'))
+  check('«Семья»: свёрнуто — «срез не отдаёт»', /Грядка\s*·\s*срез не отдаёт/i.test(briefs), line(briefs, 'Грядка'))
+  check('«Семья»: свёрнуто — опечатка «не прочитан»', /Опечатка в имени\s*·\s*не прочитан/i.test(briefs), line(briefs, 'Опечатка'))
+
+  // «Как установить»: свёрнут, внутри — ссылка на сайт каждого (Р-07, Р-13).
+  check('«Как установить» свёрнут, итог у заголовка', has(briefs, 'каждое — со своего сайта') && !has(briefs, 'открыть сайт'), line(briefs, 'установить'))
+  await act(`byText('button', 'Как установить').click();`)
+  await sleep(300)
+  const sites = await act(`return [...fold('Как установить').querySelectorAll('a')].map((a) => a.getAttribute('href') + ' ' + a.target).join('|');`)
+  check(
+    '«Как установить»: ссылка на сайт каждого, новой вкладкой',
+    sites === 'https://example.org/shelf/ _blank|https://example.org/bed/ _blank|https://example.org/typo/ _blank',
+    String(sites),
+  )
+  await act(`byText('button', 'Полка').click(); byText('button', 'Грядка').click(); byText('button', 'Опечатка в имени').click(); byText('button', 'Как установить').click();`)
+  await sleep(300)
+  await go('/')
+  await waitFor(`!document.querySelector('.refresh button').disabled`)
 
   // Без связи с GitHub — последний увиденный с датой прочтения.
   githubDown = true

@@ -7,8 +7,8 @@
  */
 
 import type { App, Seen } from '../app/model.ts'
-import { shortDateTime } from '../view/values.ts'
-import { readSummary, type Failure } from './read.ts'
+import { shortDate, shortDateTime } from '../view/values.ts'
+import { NOT_GIVEN, readSummary, type Failure } from './read.ts'
 import { confirm, lastSeen, remember } from './seen.ts'
 
 export type AppState = {
@@ -49,6 +49,27 @@ export async function refreshApp(
 /** Состояние, пока не читали: последний увиденный из архива, без сети. */
 export function stored(seen: Seen | undefined): AppState {
   return { seen, status: 'fresh', text: '' }
+}
+
+/** Состояния, которые — не ошибка: прочитан, срез не отдают или сейчас нет связи. */
+const CALM: ReadonlySet<AppState['status']> = new Set(['fresh', 'none', 'offline'])
+
+/** Не ошибка ли — чтобы строку состояния показать спокойно, а не красным. */
+export function isCalm(state: AppState): boolean {
+  return CALM.has(state.status)
+}
+
+/**
+ * Итог у свёрнутого блока приложения — на «Сводке» и в «Семье» (Р-13).
+ * Говорит главное: не прочиталось, срез не отдают — или когда посчитан.
+ * Пусто — сказать нечего: не читали и в архиве ничего.
+ */
+export function brief(state: AppState | undefined): { text: string; error: boolean } | undefined {
+  if (!state) return undefined
+  if (!isCalm(state)) return { text: 'не прочитан', error: true }
+  if (state.status === 'none') return { text: NOT_GIVEN, error: false }
+  if (state.seen) return { text: `посчитано ${shortDate(state.seen.summary.computedOn)}`, error: false }
+  return undefined
 }
 
 /**

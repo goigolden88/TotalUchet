@@ -6,7 +6,8 @@ import { seenId } from '../app/model.ts'
 import { buildSummary, summaryFile } from '../shared/core/summary.ts'
 import { shelfSummary } from '../shared/testing/shelf.ts'
 import { fakeGitHub } from './fakeGitHub.ts'
-import { refreshApp, stateLine } from './refresh.ts'
+import { NOT_GIVEN } from './read.ts'
+import { brief, refreshApp, stateLine, stored } from './refresh.ts'
 import { lastSeen, remember } from './seen.ts'
 
 /** Выдуманные приложение, репозиторий и срезы (Р-01). */
@@ -86,5 +87,37 @@ describe('обновление приложения — чтение и архи
     const state = await refreshApp(APP, TOKEN, { fetch: fakeGitHub({}).fetch, now })
     expect(state.status).toBe('noAccess')
     expect(await db.count('seen')).toBe(0)
+  })
+})
+
+describe('итог у свёрнутого блока (Р-13)', () => {
+  it('прочитан — «посчитано ДД.ММ»', async () => {
+    const state = await refreshApp(APP, TOKEN, { fetch: fakeGitHub(repoWith('2026-09-24')).fetch, now })
+    expect(brief(state)).toEqual({ text: 'посчитано 24.09', error: false })
+  })
+
+  it('без summary.json — «срез не отдаёт», не ошибка', async () => {
+    const state = await refreshApp(APP, TOKEN, { fetch: fakeGitHub({ [APP.dataRepo]: { files: {} } }).fetch, now })
+    expect(brief(state)).toEqual({ text: NOT_GIVEN, error: false })
+  })
+
+  it('нет доступа и кривой срез — «не прочитан», ошибкой', async () => {
+    const denied = await refreshApp(APP, TOKEN, { fetch: fakeGitHub({}).fetch, now })
+    expect(brief(denied)).toEqual({ text: 'не прочитан', error: true })
+    const broken = { [APP.dataRepo]: { files: { 'summary.json': '{"format":1}' } } }
+    expect(brief(await refreshApp(APP, TOKEN, { fetch: fakeGitHub(broken).fetch, now }))?.error).toBe(true)
+  })
+
+  it('без сети — когда посчитан увиденный; не видели — пусто', async () => {
+    const empty = await refreshApp(APP, TOKEN, { fetch: fakeGitHub({}, { offline: true }).fetch, now })
+    expect(brief(empty)).toBeUndefined()
+    await refreshApp(APP, TOKEN, { fetch: fakeGitHub(repoWith('2026-09-22')).fetch, now })
+    const cut = await refreshApp(APP, TOKEN, { fetch: fakeGitHub({}, { offline: true }).fetch, now })
+    expect(brief(cut)).toEqual({ text: 'посчитано 22.09', error: false })
+  })
+
+  it('не читали и в архиве пусто — пусто', () => {
+    expect(brief(undefined)).toBeUndefined()
+    expect(brief(stored(undefined))).toBeUndefined()
   })
 })

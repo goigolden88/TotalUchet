@@ -71,21 +71,31 @@
 
 /* ─── «Семья» ───────────────────────────────────────────────────────────── */
 
-.family {
-  margin: 0 0 16px;
-}
-
+/* Приложение — внутри своего свёрнутого блока (Р-13). */
 .family__app {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--line);
+  gap: 6px;
 }
 
-.family__app a {
+.family__app .row {
+  margin-top: 6px;
+}
+
+.family__app a,
+.install__app a {
   color: var(--accent);
   word-break: break-all;
+}
+
+/* «Как установить»: имя и ссылка на сайт — какое ставить, выбирает человек. */
+.install__app {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
 }
 
 /* Проверка доступа в «Настройках»: имя приложения и что видит токен. */

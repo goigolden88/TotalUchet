@@ -1,27 +1,23 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import type { App } from '../app/model.ts'
 import { CHANGES } from '../changes.ts'
-import { refreshApp, stateLine, stored, type AppState } from '../reading/refresh.ts'
-import { lastSeenAll } from '../reading/seen.ts'
+import { isCalm, stateLine, type AppState } from '../reading/refresh.ts'
 import { formatDateLong, formatPeriod } from '../shared/core/dates.ts'
 import type { Summary as Slice, SummaryPeriod } from '../shared/core/summary.ts'
 import { WhatsNew } from '../shared/screens/WhatsNew.tsx'
 import { Fold } from '../shared/ui/Fold.tsx'
 import { useWhatsNew } from '../shared/screens/useWhatsNew.ts'
 import { useToday } from '../shared/ui/useToday.ts'
-import { useApps } from '../ui/useApps.ts'
 import { useBase } from '../ui/useBase.ts'
+import { foldSummary, useReadOnOpen } from '../ui/reading.tsx'
 import { useTitle } from '../ui/useTitle.ts'
-import { useToken } from '../ui/useToken.ts'
 import { calls } from '../view/attention.ts'
 import { CHOICES, DEFAULT_CHOICE, findPeriod, freshness, screenPeriod, type Choice } from '../view/periods.ts'
-import { formatValue, shortDate } from '../view/values.ts'
+import { formatValue } from '../view/values.ts'
 import { Head } from './Head.tsx'
+import { NoToken } from './NoToken.tsx'
 import { FAMILY_TAB } from './tabs.ts'
-
-/** Состояния, которые — не ошибка: срез не отдают или сейчас нет связи. */
-const CALM: ReadonlySet<AppState['status']> = new Set(['fresh', 'none', 'offline'])
 
 /**
  * «Сводка» — главный экран (Р-04, Р-06). Сверху «Зовут», ниже — отрезок
@@ -31,59 +27,19 @@ const CALM: ReadonlySet<AppState['status']> = new Set(['fresh', 'none', 'offline
  * «Зовут» и блоки приложений сворачиваются; у свёрнутого — итог рядом
  * с заголовком.
  *
- * Сразу — последние увиденные срезы из архива; затем каждое приложение
- * читается само по себе, ошибка одного не трогает остальных (Р-05).
- * Читается при открытии и кнопкой «Обновить», в фоне — нет.
+ * Чтение — общее с «Семьёй» (Р-13): сразу — последние увиденные срезы
+ * из архива; затем каждое приложение читается само по себе, ошибка одного
+ * не трогает остальных (Р-05). Читается при открытии и кнопкой «Обновить»,
+ * в фоне — нет.
  */
 export function Summary() {
   const title = useTitle()
   const day = useToday()
   const base = useBase()
   const whatsNew = useWhatsNew(base, CHANGES)
-  const token = useToken()
-  const apps = useApps()
+  const { apps, token, states, reading, refresh } = useReadOnOpen()
 
   const [choice, setChoice] = useState<Choice>(DEFAULT_CHOICE)
-  const [states, setStates] = useState<ReadonlyMap<string, AppState>>(new Map())
-  const [reading, setReading] = useState(0)
-  // Итоги прежнего прохода — другого токена или списка — не показываются.
-  const pass = useRef(0)
-
-  const appsKey = apps?.map((app) => `${app.id}:${app.dataRepo}`).join('|')
-
-  // Архив — сразу: без сети это всё, что есть.
-  useEffect(() => {
-    if (!apps) return
-    let alive = true
-    void lastSeenAll(apps.map((app) => app.id)).then((found) => {
-      if (!alive) return
-      setStates((before) => {
-        const next = new Map(before)
-        for (const app of apps) if (!next.has(app.id)) next.set(app.id, stored(found.get(app.id)))
-        return next
-      })
-    })
-    return () => {
-      alive = false
-    }
-    // Список сравнивается по appsKey: новый массив с теми же репозиториями — не повод читать заново.
-  }, [appsKey])
-
-  const refresh = useCallback(() => {
-    if (!token || !apps || apps.length === 0) return
-    const current = ++pass.current
-    setReading(apps.length)
-    for (const app of apps) {
-      void refreshApp(app, token).then((state) => {
-        if (pass.current !== current) return
-        setStates((before) => new Map(before).set(app.id, state))
-        setReading((left) => left - 1)
-      })
-    }
-    // Список сравнивается по appsKey: новый массив с теми же репозиториями — не повод читать заново.
-  }, [token, appsKey])
-
-  useEffect(refresh, [refresh])
 
   const screen = screenPeriod(choice, day)
   const latest = useMemo(() => {
@@ -101,14 +57,7 @@ export function Summary() {
 
       {whatsNew.show.length > 0 && <WhatsNew changes={whatsNew.show} onDone={whatsNew.dismiss} />}
 
-      {token === null && (
-        <section className="block">
-          <p className="stub">
-            Не настроено: нет токена чтения. Впиши его в <Link to="/settings">«Настройках»</Link> — без него
-            срезы приложений не читаются.
-          </p>
-        </section>
-      )}
+      {token === null && <NoToken />}
 
       {apps?.length === 0 && (
         <section className="block">
@@ -190,18 +139,10 @@ function AppBlock({ app, state, screen }: { app: App; state: AppState | undefine
   const summary = state?.seen?.summary
   const line = state ? stateLine(state) : ''
   const view = summary ? findPeriod(summary, screen) : null
-  // Свёрнутый блок говорит главное: не прочиталось — или когда посчитан.
-  const brief =
-    state && !CALM.has(state.status) ? (
-      <span className="error">не прочитан</span>
-    ) : summary ? (
-      `посчитано ${shortDate(summary.computedOn)}`
-    ) : undefined
-
   return (
-    <Fold id={`summary:app:${app.id}`} title={app.name} summary={brief}>
+    <Fold id={`summary:app:${app.id}`} title={app.name} summary={foldSummary(state)}>
       {summary && <p className="muted">{freshness(summary)}</p>}
-      {line && <p className={state && CALM.has(state.status) ? 'muted' : 'error'}>{line}</p>}
+      {line && <p className={state && isCalm(state) ? 'muted' : 'error'}>{line}</p>}
       {!state && <p className="muted">…</p>}
 
       {view && !view.found && <p className="muted">{view.text}</p>}
