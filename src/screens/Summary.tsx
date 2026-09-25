@@ -14,8 +14,8 @@ import { useArchiveLabels, useBundles } from '../ui/useBundles.ts'
 import { foldSummary, useReadOnOpen } from '../ui/reading.tsx'
 import { useTitle } from '../ui/useTitle.ts'
 import { calls } from '../view/attention.ts'
-import { CHOICES, DEFAULT_CHOICE, findPeriod, freshness, screenPeriod, type Choice } from '../view/periods.ts'
-import { formatValue } from '../view/values.ts'
+import { appBlock } from '../view/block.ts'
+import { CHOICES, DEFAULT_CHOICE, screenPeriod, type Choice } from '../view/periods.ts'
 import { BundleBlock } from './Bundles.tsx'
 import { Head } from './Head.tsx'
 import { NoToken } from './NoToken.tsx'
@@ -146,33 +146,31 @@ export function Summary() {
 function AppBlock({ app, state, screen }: { app: App; state: AppState | undefined; screen: SummaryPeriod }) {
   const summary = state?.seen?.summary
   const line = state ? stateLine(state) : ''
-  const view = summary ? findPeriod(summary, screen) : null
+  const block = summary ? appBlock(summary, screen) : null
+  const body = block?.body
   return (
     <Fold id={`summary:app:${app.id}`} title={app.name} summary={foldSummary(state)}>
-      {summary && <p className="muted">{freshness(summary)}</p>}
+      {block && <p className="muted">{block.freshness}</p>}
       {line && <p className={state && isCalm(state) ? 'muted' : 'error'}>{line}</p>}
       {!state && <p className="muted">…</p>}
 
-      {view && !view.found && <p className="muted">{view.text}</p>}
-      {view?.found && (
+      {body?.kind === 'missing' && <p className="muted">{body.text}</p>}
+      {body && body.kind !== 'missing' && (
         <>
-          {view.going && <p className="muted">{view.going}</p>}
-          {'unknown' in view.period.metrics ? (
-            <p className="muted">{formatValue(view.period.metrics).text}</p>
+          {body.going && <p className="muted">{body.going}</p>}
+          {body.kind === 'unknown' ? (
+            <p className="muted">{body.text}</p>
           ) : (
             <ul className="plain metrics">
-              {view.period.metrics.map((metric) => {
-                const value = formatValue(metric.value)
-                return (
-                  <li key={metric.key} className="metric">
-                    <div className="metric__row">
-                      <span>{metric.label}</span>
-                      <span className={value.muted ? 'metric__value muted' : 'metric__value'}>{value.text}</span>
-                    </div>
-                    <div className="basis">{metric.basis}</div>
-                  </li>
-                )
-              })}
+              {body.rows.map((row) => (
+                <li key={row.key} className="metric">
+                  <div className="metric__row">
+                    <span>{row.label}</span>
+                    <span className={row.value.muted ? 'metric__value muted' : 'metric__value'}>{row.value.text}</span>
+                  </div>
+                  <div className="basis">{row.basis}</div>
+                </li>
+              ))}
             </ul>
           )}
         </>
