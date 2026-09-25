@@ -8,7 +8,7 @@
 
 import type { AppConfig } from '../shared/core/model.ts'
 import { DEFAULT_TITLE } from '../ui/title.ts'
-import { MIGRATIONS, SCHEMA_VERSION, STORES, type StoreRecord } from './model.ts'
+import { MIGRATIONS, SCHEMA_VERSION, STORES, V1_STORES, type StoreRecord } from './model.ts'
 
 export const config: AppConfig<StoreRecord> = {
   name: DEFAULT_TITLE,
@@ -17,27 +17,31 @@ export const config: AppConfig<StoreRecord> = {
   schemaVersion: SCHEMA_VERSION,
   migrations: MIGRATIONS,
   stores: STORES,
-  v1Stores: STORES,
+  v1Stores: V1_STORES,
   indexes: {
     apps: [],
     // Последний увиденный срез приложения — по его записям.
     seen: ['app'],
+    bundles: [],
   },
   // Синхронизации нет, но места выбраны сразу: она добавится без миграции
   // (Р-02, Р-08).
   places: {
     apps: { split: 'none', path: 'apps.json' },
     seen: { split: 'month', dir: 'seen', dateOf: (record) => record.computedOn },
+    // Связки ссылаются на id приложений — едут вместе с ними (Р-18).
+    bundles: { split: 'none', path: 'bundles.json' },
   },
   storeNotes: {
     apps: 'приложения семьи: имя, репозиторий данных, сайт, порядок',
     seen: 'увиденные срезы итогов приложений — по месяцам дня расчёта',
+    bundles: 'связки: строки разных приложений рядом — имя, порядок, приложение и ключ строки',
   },
   // Импорта нет — заглушки (Я-23); createImporting не вызывается.
   importFormat: '',
   promptRules: [],
   about: {
-    data: 'список приложений семьи и увиденные срезы их итогов',
+    data: 'список приложений семьи, увиденные срезы их итогов и связки строк',
     privacy: 'внутри итоги недель и месяцев из приложений семьи',
     sources: '',
   },

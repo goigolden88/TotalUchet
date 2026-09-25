@@ -27,6 +27,7 @@ const LAST_EXPORT = 'lastExportAt'
 const LABELS: Record<Store, string> = {
   apps: 'Приложения семьи',
   seen: 'Увиденные срезы',
+  bundles: 'Связки',
 }
 
 function describe(error: unknown): string {
