@@ -6,39 +6,10 @@
  * Общий интерфейс ядра получает его контекстом — `<CoreProvider>` в `app.tsx`.
  *
  * `createSync` не вызывается: своей синхронизации нет (Р-02, Я-23).
- * `CoreProvider` ядра всё же требует синхронизацию — ему `noSync` (Р-09).
+ * `CoreProvider` получает `config` и `db`, без `sync` (Я-29, Р-16).
  */
 
 import { createDb } from '../shared/core/db.ts'
-import type { Sync, SyncConfig, SyncStatus } from '../shared/core/sync.ts'
 import { config } from './config.ts'
 
 export const db = createDb(config)
-
-const OFF: SyncStatus = {
-  state: 'off',
-  pending: 0,
-  lastAt: null,
-  error: '',
-  badToken: false,
-  deferred: false,
-}
-
-const NO_CONFIG: SyncConfig = { enabled: false, repo: '', token: '', branch: '', tokenExpires: null }
-
-/**
- * Синхронизация, которой нет (Р-09): всегда «выключено», в сеть не ходит,
- * в `settings` не пишет. Уйдёт, когда ядро сделает `sync` в `Core` необязательным.
- */
-export const noSync: Sync = {
-  readConfig: async () => NO_CONFIG,
-  saveConfig: async () => {},
-  forgetToken: async () => {},
-  checkAccess: async () => {
-    throw new Error('Синхронизации у приложения нет')
-  },
-  getStatus: () => OFF,
-  subscribe: () => () => {},
-  refreshStatus: async () => OFF,
-  syncNow: async () => null,
-}

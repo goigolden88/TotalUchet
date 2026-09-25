@@ -420,7 +420,9 @@ async function scenario(profile) {
   check('база открылась — строки хранилищ', has(about, 'Приложения семьи') && has(about, 'Увиденные срезы'))
   await act(`byText('button', 'Сообщить об ошибке').click();`)
   await sleep(500)
-  check('отчёт об ошибке открылся на заглушке синхронизации (Р-09)', has(await screen(), 'Открыть на GitHub') || has(await screen(), 'Скопировать'))
+  const report = await screen()
+  check('отчёт об ошибке открылся без синхронизации (Я-29, Р-16)', has(report, 'Открыть на GitHub') || has(report, 'Скопировать'))
+  check('в отчёте — «Синхронизация: выключена»', has(report, 'Синхронизация: выключена'))
 
   // ── Этап 1: срезы с подставного GitHub. Запросы к api.github.com
   // до сети не доходят — отвечает подставной.

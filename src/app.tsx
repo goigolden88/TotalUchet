@@ -1,6 +1,6 @@
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { config } from './app/config.ts'
-import { db, noSync } from './app/core.ts'
+import { db } from './app/core.ts'
 import { CoreProvider } from './shared/ui/core.tsx'
 import { Layout } from './shared/ui/Layout.tsx'
 import { Family } from './screens/Family.tsx'
@@ -14,12 +14,13 @@ import { ReadingProvider } from './ui/reading.tsx'
  * страницы — сервер ищет файл, которого нет. Всё после # до сервера не доходит.
  *
  * Общий интерфейс ядра — нижняя панель, «Что нового», отчёт об ошибке —
- * берёт базу из `CoreProvider`. Синхронизации нет: провайдеру — `noSync` (Р-09).
+ * берёт базу из `CoreProvider`. Синхронизации нет: `sync` провайдеру не передаётся,
+ * отчёт говорит «выключена» (Я-29, Р-16).
  * Чтение срезов — одно на «Сводку» и «Семью»: `ReadingProvider` (Р-13).
  */
 export function App() {
   return (
-    <CoreProvider value={{ config, db, sync: noSync }}>
+    <CoreProvider value={{ config, db }}>
       <ReadingProvider>
         <HashRouter>
           <Routes>
