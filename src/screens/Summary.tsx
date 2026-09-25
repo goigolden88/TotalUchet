@@ -10,18 +10,20 @@ import { Fold } from '../shared/ui/Fold.tsx'
 import { useWhatsNew } from '../shared/screens/useWhatsNew.ts'
 import { useToday } from '../shared/ui/useToday.ts'
 import { useBase } from '../ui/useBase.ts'
+import { useArchiveLabels, useBundles } from '../ui/useBundles.ts'
 import { foldSummary, useReadOnOpen } from '../ui/reading.tsx'
 import { useTitle } from '../ui/useTitle.ts'
 import { calls } from '../view/attention.ts'
 import { CHOICES, DEFAULT_CHOICE, findPeriod, freshness, screenPeriod, type Choice } from '../view/periods.ts'
 import { formatValue } from '../view/values.ts'
+import { BundleBlock } from './Bundles.tsx'
 import { Head } from './Head.tsx'
 import { NoToken } from './NoToken.tsx'
 import { FAMILY_TAB } from './tabs.ts'
 
 /**
  * «Сводка» — главный экран (Р-04, Р-06). Сверху «Зовут», ниже — отрезок
- * переключателем и блок каждого приложения. Показывает, а не досчитывает
+ * переключателем, связки (Р-19) и блок каждого приложения. Показывает, а не досчитывает
  * (Я-15): строки — в порядке хозяина, значение — одно за раз.
  *
  * «Зовут» и блоки приложений сворачиваются; у свёрнутого — итог рядом
@@ -38,6 +40,8 @@ export function Summary() {
   const base = useBase()
   const whatsNew = useWhatsNew(base, CHANGES)
   const { apps, token, states, reading, refresh } = useReadOnOpen()
+  const bundles = useBundles()
+  const archive = useArchiveLabels(bundles)
 
   const [choice, setChoice] = useState<Choice>(DEFAULT_CHOICE)
 
@@ -124,6 +128,10 @@ export function Summary() {
             ))}
           </div>
           <p className="muted period">{formatPeriod(screen)}</p>
+
+          {bundles?.map((bundle) => (
+            <BundleBlock key={bundle.id} bundle={bundle} screen={screen} apps={apps} states={states} archive={archive} />
+          ))}
 
           {apps.map((app) => (
             <AppBlock key={app.id} app={app} state={states.get(app.id)} screen={screen} />

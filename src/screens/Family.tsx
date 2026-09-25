@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { checkApp, nextOrder, type AppInput } from '../app/apps.ts'
 import { db } from '../app/core.ts'
 import type { App } from '../app/model.ts'
@@ -7,7 +8,9 @@ import { nowIso } from '../shared/core/dates.ts'
 import { ulid } from '../shared/core/id.ts'
 import { Fold } from '../shared/ui/Fold.tsx'
 import { foldSummary, useReadOnOpen } from '../ui/reading.tsx'
+import { useArchiveLabels, useBundles } from '../ui/useBundles.ts'
 import { freshness } from '../view/periods.ts'
+import { BundlesSection } from './Bundles.tsx'
 import { Head } from './Head.tsx'
 import { NoToken } from './NoToken.tsx'
 import { FAMILY_TAB, SUMMARY_TAB } from './tabs.ts'
@@ -22,9 +25,15 @@ import { FAMILY_TAB, SUMMARY_TAB } from './tabs.ts'
  * который сворачивается; у свёрнутого — итог. «Как установить» — один блок
  * со ссылкой на сайт каждого: поставить соседа отсюда браузер не даёт,
  * отметки «установлено» нет (Р-07).
+ *
+ * Ниже приложений — связки (Р-21): со «Сводки» сюда ведёт ссылка
+ * `?bundle=<id>`, и форма этой связки открыта.
  */
 export function Family() {
   const { apps, token, states } = useReadOnOpen()
+  const bundles = useBundles()
+  const archive = useArchiveLabels(bundles)
+  const [params, setParams] = useSearchParams()
   // null — формы нет; 'new' — новое приложение; иначе — правка этого.
   const [editing, setEditing] = useState<App | 'new' | null>(null)
   const [note, setNote] = useState('')
@@ -97,6 +106,17 @@ export function Family() {
 
         {note && <p className="muted">{note}</p>}
       </section>
+
+      {apps && apps.length > 0 && bundles && (
+        <BundlesSection
+          bundles={bundles}
+          target={params.get('bundle')}
+          onTargetDone={() => setParams({}, { replace: true })}
+          apps={apps}
+          states={states}
+          archive={archive}
+        />
+      )}
 
       {apps && apps.length > 0 && <Install apps={apps} />}
     </>

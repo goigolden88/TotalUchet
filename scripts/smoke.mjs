@@ -30,7 +30,7 @@ import { DEFAULT_TITLE } from '../src/ui/title.ts'
 // чтения (Р-01): ни настоящего репозитория, ни токена, ни среза.
 import { fakeGitHub } from '../src/reading/fakeGitHub.ts'
 import { addDays, addMonths, monthOf, today } from '../src/shared/core/dates.ts'
-import { buildSummary, summaryFile } from '../src/shared/core/summary.ts'
+import { buildSummary, summaryFile, summaryPeriods } from '../src/shared/core/summary.ts'
 import { shelfSummary } from '../src/shared/testing/shelf.ts'
 import { CHOICES, findPeriod, screenPeriod } from '../src/view/periods.ts'
 import { formatValue } from '../src/view/values.ts'
@@ -259,10 +259,11 @@ async function offline(on) {
 /** Выдуманный токен: настоящий в прогон не попадает никогда (Р-01). */
 const TOKEN = 'fake-read-token'
 
-/** Выдуманные репозитории данных: срез есть, среза нет, опечатка — нет вовсе. */
+/** Выдуманные репозитории данных: срез есть, среза нет, опечатка — нет вовсе; второй срез — для связок. */
 const SHELF = 'someone/shelf-data'
 const BED = 'someone/bed-data'
 const TYPO = 'someone/typo-data'
+const POND = 'someone/pond-data'
 
 const DAY = today()
 
@@ -280,9 +281,29 @@ const SLICE = (() => {
 
 const FILE = summaryFile(SLICE)
 
+/**
+ * Выдуманный «Пруд» — второй срез для связок (Р-17…Р-20): «Выходы к пруду»
+ * у всех отрезков, «Улов» — только у месяцев. Без улова — строка пропала
+ * из среза целиком, как у переименованной группы.
+ */
+function pondFile(withFish) {
+  const periods = summaryPeriods(DAY).map((period, index) => {
+    const visits = { key: 'pond.visits', label: 'Выходы к пруду', value: { n: period.grain === 'week' ? 2 : 6, unit: 'count' }, basis: 'по записям прогулок' }
+    const fish = { key: 'pond.fish', label: 'Улов', value: { n: 3, unit: 'count' }, basis: 'по записям улова' }
+    const metrics = period.grain === 'month' && withFish ? [visits, fish] : [visits]
+    return { ...period, through: index % 2 === 1 ? DAY : null, metrics }
+  })
+  const file = summaryFile(buildSummary({ periods, attention: [] }, {}, DAY))
+  return { [file.path]: file.content, 'meta.json': '{"app":"pond","schemaVersion":1}\n' }
+}
+
+/** Репозиторий «Пруда» — файлы меняются по ходу прогона. */
+const pond = { files: pondFile(true) }
+
 const github = fakeGitHub({
   [SHELF]: { files: { [FILE.path]: FILE.content, 'meta.json': '{"app":"polka","schemaVersion":1}\n' } },
   [BED]: { files: { 'meta.json': '{"app":"bed","schemaVersion":1}\n' } },
+  [POND]: pond,
 })
 
 /** Нет связи с GitHub — запросы обрываются, как без сети. */
@@ -433,6 +454,7 @@ async function scenario(profile) {
   await addApp('Полка', `https://github.com/${SHELF}`, 'https://example.org/shelf')
   await addApp('Грядка', BED, 'https://example.org/bed/')
   await addApp('Опечатка', TYPO, 'https://example.org/typo/')
+  await addApp('Пруд', POND, 'https://example.org/pond/')
   const listed = await screen()
   check('«Семья»: три приложения добавлены', has(listed, 'Полка') && has(listed, 'Грядка') && has(listed, 'Опечатка'))
   check('«Семья»: ссылка на репозиторий сведена к «владелец/имя»', has(listed, SHELF) && !has(listed, `github.com/${SHELF}`))
@@ -524,13 +546,15 @@ async function scenario(profile) {
   const sites = await act(`return [...fold('Как установить').querySelectorAll('a')].map((a) => a.getAttribute('href') + ' ' + a.target).join('|');`)
   check(
     '«Как установить»: ссылка на сайт каждого, новой вкладкой',
-    sites === 'https://example.org/shelf/ _blank|https://example.org/bed/ _blank|https://example.org/typo/ _blank',
+    sites === 'https://example.org/shelf/ _blank|https://example.org/bed/ _blank|https://example.org/typo/ _blank|https://example.org/pond/ _blank',
     String(sites),
   )
   await act(`byText('button', 'Полка').click(); byText('button', 'Грядка').click(); byText('button', 'Опечатка в имени').click(); byText('button', 'Как установить').click();`)
   await sleep(300)
   await go('/')
   await waitFor(`!document.querySelector('.refresh button').disabled`)
+
+  await bundles()
 
   // Без связи с GitHub — последний увиденный с датой прочтения.
   githubDown = true
@@ -554,6 +578,104 @@ async function scenario(profile) {
     `работник ${controlled ? 'управляет' : 'не управляет'} страницей`,
   )
   await offline(false)
+}
+
+/** Отметить строку в форме связки — по подписи. */
+function pick(label) {
+  return `[...document.querySelectorAll('label.check')].find((el) => el.innerText.startsWith(${JSON.stringify(label)})).querySelector('input').click();`
+}
+
+/**
+ * Связки (Р-17…Р-21): завести в «Семье», увидеть на «Сводке» между
+ * переключателем и приложениями, строку, которой нет в отрезке и нет
+ * в срезе вовсе, путь «поправь связку», убранное приложение.
+ */
+async function bundles() {
+  await go('/family')
+  await waitFor(`document.body.innerText.includes('Новая связка')`)
+  check('«Семья»: «Связки» — пока нет', /Связки\s*·\s*нет/i.test((await screen()).replace(/ /g, ' ')))
+
+  await act(`byText('button', 'Новая связка').click();`)
+  await sleep(300)
+  await act(`set(document.querySelector('input[name=bundleName]'), 'Рядом');`)
+  await act(pick('Чтение'))
+  await act(pick('Выходы к пруду'))
+  await act(pick('Улов'))
+  await sleep(100)
+  await act(`byText('button', 'Сохранить').click();`)
+  await sleep(500)
+  check('«Семья»: связка заведена', has(await screen(), 'Связка «Рядом» заведена'))
+
+  await act(`byText('button', 'Новая связка').click();`)
+  await sleep(300)
+  const taken = await act(`
+    const box = [...document.querySelectorAll('label.check')].find((el) => el.innerText.startsWith('Чтение'));
+    return box.querySelector('input').disabled + ' ' + box.innerText;
+  `)
+  check('форма: строка из другой связки недоступна (Р-17)', /^true .*в связке «Рядом»/.test(String(taken).replace(/ /g, ' ')), String(taken))
+  await act(`byText('button', 'Отмена').click();`)
+  await sleep(300)
+
+  // «Сводка»: связка — между переключателем и приложениями (Р-19).
+  await go('/')
+  await waitFor(`document.body.innerText.includes('Выходы к пруду')`)
+  const order = await act(`
+    const blocks = [...document.querySelectorAll('#root .switch, #root section.block')];
+    const at = (title) => blocks.findIndex((el) => el.querySelector?.('.fold__btn')?.textContent === title);
+    return [blocks.findIndex((el) => el.classList.contains('switch')), at('Рядом'), at('Полка')].join(' ');
+  `)
+  const [switchAt, bundleAt, shelfAt] = String(order).split(' ').map(Number)
+  check('«Сводка»: связка — после переключателя, до приложений', switchAt < bundleAt && bundleAt < shelfAt, String(order))
+
+  await act(`byText('button', 'Эта неделя').click();`)
+  await sleep(200)
+  const week = await act(`return fold('Рядом').innerText;`)
+  check('связка: оба приложения, у каждого своя свежесть', has(week, 'Полка') && has(week, 'Пруд') && (week.match(/посчитано/g) ?? []).length === 2, week.replace(/\s+/g, ' ').slice(0, 160))
+  check('связка: строки хозяев с основанием', has(week, 'Чтение') && has(week, 'Выходы к пруду') && has(week, 'по записям прогулок'))
+  check('связка: «Улов» на неделе — «нет в срезе за этот отрезок» (Р-20)', has(week, 'Улов — нет в срезе за этот отрезок'), line(week, 'Улов'))
+
+  await act(`byText('button', 'Этот месяц').click();`)
+  await sleep(200)
+  const month = await act(`return fold('Рядом').innerText;`)
+  check('связка: на месяце — «Улов» с основанием', has(month, 'по записям улова') && !has(month, 'нет в срезе'), line(month, 'Улов'))
+
+  await act(`byText('button', 'Рядом').click();`)
+  await sleep(300)
+  const brief = (await screen()).replace(/ /g, ' ')
+  check('связка свёрнута — у заголовка имена приложений, без чисел', /Рядом\s*·\s*Полка · Пруд/i.test(brief), line(brief, 'Рядом'))
+  await act(`byText('button', 'Рядом').click();`)
+  await sleep(300)
+
+  // Строка пропала из среза целиком — «поправь связку» ведёт в «Семью» (Р-20, Р-21).
+  pond.files = pondFile(false)
+  await act(`byText('button', 'Обновить').click();`)
+  await sleep(300)
+  await waitFor(`!document.querySelector('.refresh button').disabled && document.body.innerText.includes('ни в одном отрезке')`)
+  const gone = await act(`return fold('Рядом').innerText;`)
+  check('связка: строки нет ни в одном отрезке — сказано и «поправь связку»', has(gone, 'этой строки нет ни в одном отрезке') && has(gone, 'поправь связку'), line(gone, 'ни в одном'))
+  const fix = await run(`[...document.querySelectorAll('a')].find((a) => a.textContent === 'поправь связку')?.getAttribute('href') ?? ''`)
+  check('«поправь связку» — на связку в «Семье»', /^#\/family\?bundle=/.test(String(fix)), String(fix))
+  await act(`[...document.querySelectorAll('a')].find((a) => a.textContent === 'поправь связку').click();`)
+  await waitFor(`document.querySelector('input[name=bundleName]')`)
+  const form = await screen()
+  check('«Семья»: пришли ссылкой — форма связки открыта', (await run(`document.querySelector('input[name=bundleName]').value`)) === 'Рядом')
+  check('форма: пропавшая строка помечена', has(form, 'нет в последнем срезе'), line(form, 'нет в последнем'))
+  await act(`byText('button', 'Отмена').click();`)
+  await sleep(300)
+
+  // Приложение убрано: на «Сводке» его строк нет, в форме — «приложение убрано» (Р-20).
+  await act(`window.confirm = () => true; [...fold('Пруд').querySelectorAll('button')].find((el) => el.textContent === 'Убрать').click();`)
+  await sleep(500)
+  await act(`[...fold('Рядом').querySelectorAll('button')].find((el) => el.textContent === 'Поправить').click();`)
+  await sleep(300)
+  const removed = await screen()
+  check('форма: строки убранного приложения — отдельно, с пометкой', has(removed, 'Убранные из') && has(removed, 'приложение убрано'), line(removed, 'убран'))
+  await act(`byText('button', 'Отмена').click();`)
+  await sleep(300)
+  await go('/')
+  await waitFor(`!document.querySelector('.refresh button').disabled`)
+  const after = await act(`return fold('Рядом').innerText;`)
+  check('«Сводка»: у убранного приложения в связке строк нет', has(after, 'Чтение') && !has(after, 'Пруд') && !has(after, 'Выходы'), after.replace(/\s+/g, ' ').slice(0, 120))
 }
 
 // ─── Прогон ────────────────────────────────────────────────────────────────
