@@ -19,7 +19,7 @@
 
 import { spawn } from 'node:child_process'
 import { build, preview } from 'vite'
-import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -29,6 +29,8 @@ import { DEFAULT_TITLE } from '../src/ui/title.ts'
 // Подставной GitHub и выдуманный срез «Полки» ядра — те же, что в тестах
 // чтения (Р-01): ни настоящего репозитория, ни токена, ни среза.
 import { fakeGitHub } from '../src/reading/fakeGitHub.ts'
+// Список для бота разбирается той же функцией, что у самого бота (Р-28).
+import { LIST_FILE, parseBotList } from '../src/bot/list.ts'
 import { addDays, addMonths, monthOf, today } from '../src/shared/core/dates.ts'
 import { buildSummary, summaryFile, summaryPeriods } from '../src/shared/core/summary.ts'
 import { shelfSummary } from '../src/shared/testing/shelf.ts'
@@ -358,6 +360,39 @@ function expectedReading(choice) {
   return formatValue(metrics[0].value).text
 }
 
+/**
+ * «Настройки» → «Телеграм-бот» (Р-28): список скачивается файлом, в нём
+ * приложения, название и адрес «Сводки» — ни токена, ни срезов, ни связок.
+ * Разбирается той же функцией, что у бота.
+ */
+async function botList() {
+  await go('/settings')
+  await act(`byText('button', 'Телеграм-бот').click();`)
+  await sleep(300)
+  await act(`byText('button', 'Скачать список для бота').click();`)
+  await sleep(1000)
+  check('«Телеграм-бот»: список сохранён', has(await screen(), 'положи его в репозиторий бота'))
+  const file = join(profile, LIST_FILE)
+  const text = existsSync(file) ? readFileSync(file, 'utf8') : ''
+  const parsed = text ? parseBotList(text) : { ok: false, problem: 'файла нет' }
+  check('«Телеграм-бот»: bot.json скачан и читается ботом', parsed.ok, parsed.ok ? '' : parsed.problem)
+  if (parsed.ok) {
+    check(
+      '«Телеграм-бот»: в списке — приложения в порядке человека, название, адрес «Сводки»',
+      // «Пруд» к этому шагу убран сценарием связок: убранного в списке нет.
+      parsed.list.apps.map((app) => app.name).join(',') === 'Полка,Грядка,Опечатка в имени' &&
+        parsed.list.title === DEFAULT_TITLE &&
+        parsed.list.summaryUrl === APP,
+      `${parsed.list.apps.map((app) => app.name).join(',')} · ${parsed.list.summaryUrl}`,
+    )
+  }
+  check('«Телеграм-бот»: ни токена, ни срезов, ни связок в файле', text !== '' && !text.includes(TOKEN) && !text.includes('"periods"') && !text.includes('"rows"'))
+  await act(`byText('button', 'Телеграм-бот').click();`)
+  await sleep(200)
+  await go('/')
+  await waitFor(`!document.querySelector('.refresh button').disabled`)
+}
+
 // ─── Сценарий ──────────────────────────────────────────────────────────────
 
 /**
@@ -555,6 +590,7 @@ async function scenario(profile) {
   await waitFor(`!document.querySelector('.refresh button').disabled`)
 
   await bundles()
+  await botList()
 
   // Без связи с GitHub — последний увиденный с датой прочтения.
   githubDown = true

@@ -10,6 +10,7 @@ import { Fold } from '../shared/ui/Fold.tsx'
 import { InstallNote } from '../shared/ui/Install.tsx'
 import { ReportBug } from '../shared/ui/Report.tsx'
 import type { App } from '../app/model.ts'
+import { botList, LIST_FILE, listText } from '../bot/list.ts'
 import { checkAccess, RIGHTS_UNKNOWN, type Access } from '../reading/read.ts'
 import { DEFAULT_TITLE, MAX_TITLE } from '../ui/title.ts'
 import { useApps } from '../ui/useApps.ts'
@@ -50,6 +51,7 @@ export function Settings() {
       <TokenSection />
       <TitleSection />
       <DataCopy base={base} />
+      <BotSection />
       <About base={base} />
     </>
   )
@@ -344,6 +346,61 @@ function DataCopy({ base }: { base: BaseCounts }) {
 
       {note && <p className="muted">{note}</p>}
       {error && <p className="error">{error}</p>}
+    </Fold>
+  )
+}
+
+/** Как завести бота по шагам — раздел документов проекта (Р-23). */
+const BOT_GUIDE = 'https://github.com/goigolden88/TotalUchet/blob/main/docs/06-Процесс.md#телеграм-бот-как-завести'
+
+/**
+ * Список для Телеграм-бота файлом (Р-28): бот живёт в приватном репозитории
+ * человека и этого устройства не видит. В файле — приложения, своё название
+ * и адрес «Сводки»; ни токена, ни срезов, ни связок.
+ */
+function BotSection() {
+  const apps = useApps()
+  const title = useTitle()
+  const [note, setNote] = useState('')
+
+  return (
+    <Fold id="settings:bot" title="Телеграм-бот" summary="список — файлом" folded>
+      <p>
+        Бот раз в неделю присылает в твой личный чат в Телеграме то же, что показывает «Сводка»: кто зовёт и строки
+        приложений с основаниями. Живёт он в твоём приватном репозитории на GitHub и этого устройства не видит —
+        список приложений ему нужен файлом.
+      </p>
+      {apps?.length === 0 ? (
+        <p className="muted">
+          Приложений пока нет — сначала добавь их во вкладке «{FAMILY_TAB.name}».
+        </p>
+      ) : (
+        <div className="row row--wrap">
+          <button
+            type="button"
+            className="btn"
+            disabled={!apps}
+            onClick={() => {
+              if (!apps) return
+              download(LIST_FILE, listText(botList(apps, title, window.location.href)))
+              setNote('Файл сохранён — положи его в репозиторий бота')
+            }}
+          >
+            Скачать список для бота
+          </button>
+        </div>
+      )}
+      <p className="muted">
+        В файле — имена приложений, их репозитории данных и сайты; токена и срезов в нём нет. Поменял приложения
+        в «{FAMILY_TAB.name}» — скачай и положи файл заново. В Телеграм уходит всё, что видно на «Сводке», и остаётся
+        в истории чата.
+      </p>
+      <p className="muted">
+        <a href={BOT_GUIDE} target="_blank" rel="noopener">
+          Как завести бота — по шагам
+        </a>
+      </p>
+      {note && <p className="muted">{note}</p>}
     </Fold>
   )
 }
