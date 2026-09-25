@@ -6,17 +6,26 @@
 import { parseRepo } from '../shared/core/github.ts'
 import type { App } from './model.ts'
 
-/** Живые приложения в порядке человека; при равном порядке — по имени. */
-export function ordered(apps: readonly App[]): App[] {
-  return apps
-    .filter((app) => !app.deleted)
+/** Запись человека с именем и порядком — приложение или связка. */
+type Placed = { name: string; order: number; deleted?: boolean }
+
+/** Живые записи в порядке человека; при равном порядке — по имени. */
+export function ordered<T extends Placed>(records: readonly T[]): T[] {
+  return records
+    .filter((record) => !record.deleted)
     .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name, 'ru'))
 }
 
-/** Порядок нового приложения — следом за последним. */
-export function nextOrder(apps: readonly App[]): number {
-  const live = apps.filter((app) => !app.deleted)
-  return live.length === 0 ? 1 : Math.max(...live.map((app) => app.order)) + 1
+/** Порядок новой записи — следом за последней живой. */
+export function nextOrder(records: readonly Placed[]): number {
+  const live = records.filter((record) => !record.deleted)
+  return live.length === 0 ? 1 : Math.max(...live.map((record) => record.order)) + 1
+}
+
+/** Порядок из формы — число; запятая вместо точки тоже годится. `null` — не число. */
+export function parseOrder(input: string): number | null {
+  const order = Number(input.trim().replace(',', '.'))
+  return input.trim() === '' || !Number.isFinite(order) ? null : order
 }
 
 /** Адрес экрана приложения: сайт со слешем и путь хеш-роутинга (Р-06). */
@@ -66,9 +75,9 @@ export function checkApp(input: AppInput): Checked {
   const site = normalizeSite(input.site)
   if (site === null) problems.push('Сайт — адрес, начинающийся с https://')
 
-  const order = Number(input.order.trim().replace(',', '.'))
-  if (input.order.trim() === '' || !Number.isFinite(order)) problems.push('Порядок — число')
+  const order = parseOrder(input.order)
+  if (order === null) problems.push('Порядок — число')
 
-  if (problems.length > 0) return { ok: false, problems }
+  if (problems.length > 0 || order === null) return { ok: false, problems }
   return { ok: true, fields: { name, dataRepo, site: site ?? '', order } }
 }

@@ -9,6 +9,7 @@
 import { db } from '../app/core.ts'
 import { seenId, type Seen } from '../app/model.ts'
 import type { Summary } from '../shared/core/summary.ts'
+import { labelsFrom } from '../view/rows.ts'
 
 /** Последний увиденный срез приложения; не видели — `undefined`. */
 export async function lastSeen(app: string): Promise<Seen | undefined> {
@@ -49,4 +50,14 @@ export async function remember(app: string, sha: string, summary: Summary, readA
 /** Отпечаток тот же — срез прежний, но проверен сейчас: новый `readAt` (Р-11). */
 export async function confirm(seen: Seen, readAt: string): Promise<Seen> {
   return db.put('seen', { ...seen, readAt })
+}
+
+/**
+ * Подписи строк по архиву — для строк связки, которых в последнем срезе нет
+ * (Р-20): id приложения → ключ → подпись из самого позднего среза, где была.
+ */
+export async function archiveLabels(apps: readonly string[]): Promise<Map<string, Map<string, string>>> {
+  const labels = new Map<string, Map<string, string>>()
+  for (const app of new Set(apps)) labels.set(app, labelsFrom(await db.getByIndex('seen', 'app', app)))
+  return labels
 }
