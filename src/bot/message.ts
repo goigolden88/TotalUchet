@@ -5,7 +5,8 @@
  * функциями `view/`, что экран: ничего не считается (Я-15), своих слов
  * о данных нет. Блоки — сворачиваемой цитатой Телеграма
  * (`blockquote expandable`), аналогом `Fold`: снаружи то, что у свёрнутого
- * на экране, внутри — строки с основаниями.
+ * на экране, внутри — строки с основаниями. Списки названий — снаружи
+ * цитаты (Р-31).
  *
  * Разметка — HTML Bot API. Всё, что пришло из среза или списка, экранируется.
  * Сообщение режется на части по лимиту Телеграма целыми блоками; блок
@@ -15,7 +16,7 @@
 import { ordered } from '../app/apps.ts'
 import type { App } from '../app/model.ts'
 import { daysBetween, formatPeriod, type DateStr } from '../shared/core/dates.ts'
-import type { Summary } from '../shared/core/summary.ts'
+import type { NameList, Summary } from '../shared/core/summary.ts'
 import { calls } from '../view/attention.ts'
 import { appBlock, type BlockRow } from '../view/block.ts'
 import { CHOICES, screenPeriod, type Choice } from '../view/periods.ts'
@@ -114,9 +115,18 @@ function rowLines(row: BlockRow): string[] {
   return [`${escapeHtml(row.label)} — ${escapeHtml(row.value.text)}`, `<i>${escapeHtml(row.basis)}</i>`]
 }
 
+/** Список названий (Р-31): подпись жирным, названия через запятую, основание курсивом. */
+function listLines(list: NameList): string[] {
+  const names = list.names.length > 0 ? `: ${list.names.map(escapeHtml).join(', ')}` : ''
+  return [`<b>${escapeHtml(list.label)}</b>${names}`, `<i>${escapeHtml(list.basis)}</i>`]
+}
+
 /**
  * Блок приложения — одна или несколько частей: строки, не влезшие в лимит,
  * уходят следующей частью с тем же заголовком.
+ *
+ * Списки названий — снаружи цитаты, сразу под шапкой (Р-31): их видно без
+ * раскрытия. В продолжении не повторяются.
  */
 function appSections(read: AppRead, input: MessageInput): string[] {
   const name = `<b>${escapeHtml(read.app.name)}</b>`
@@ -124,19 +134,22 @@ function appSections(read: AppRead, input: MessageInput): string[] {
 
   const block = appBlock(read.summary, screenPeriod(input.choice, input.today))
   const head = [name, escapeHtml(block.freshness)]
+  const lists = block.lists.flatMap(listLines)
   const { body } = block
-  if (body.kind === 'missing') return [[...head, escapeHtml(body.text)].join('\n')]
+  if (body.kind === 'missing') return [[...head, ...lists, escapeHtml(body.text)].join('\n')]
   if (body.going) head.push(escapeHtml(body.going))
-  if (body.kind === 'unknown') return [[...head, escapeHtml(body.text)].join('\n')]
-  if (body.rows.length === 0) return [head.join('\n')]
+  if (body.kind === 'unknown') return [[...head, ...lists, escapeHtml(body.text)].join('\n')]
+  if (body.rows.length === 0) return [[...head, ...lists].join('\n')]
 
   const sections: string[] = []
+  let top = [...head, ...lists]
   let lines: string[] = []
-  const render = (rows: string[]) => `${head.join('\n')}\n${quote(rows)}`
+  const render = (rows: string[]) => `${top.join('\n')}\n${quote(rows)}`
   for (const row of body.rows) {
     const next = [...lines, ...rowLines(row)]
     if (lines.length > 0 && render(next).length > MESSAGE_LIMIT) {
       sections.push(render(lines))
+      top = head
       lines = rowLines(row)
     } else {
       lines = next
