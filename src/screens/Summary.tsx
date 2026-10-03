@@ -4,7 +4,7 @@ import type { App } from '../app/model.ts'
 import { CHANGES } from '../changes.ts'
 import { isCalm, stateLine, type AppState } from '../reading/refresh.ts'
 import { formatDateLong, formatPeriod } from '../shared/core/dates.ts'
-import type { Summary as Slice, SummaryPeriod } from '../shared/core/summary.ts'
+import type { NameList, Summary as Slice, SummaryPeriod } from '../shared/core/summary.ts'
 import { WhatsNew } from '../shared/screens/WhatsNew.tsx'
 import { Fold } from '../shared/ui/Fold.tsx'
 import { useWhatsNew } from '../shared/screens/useWhatsNew.ts'
@@ -142,7 +142,7 @@ export function Summary() {
   )
 }
 
-/** Блок приложения: свежесть, состояние чтения, отрезок и строки хозяина. */
+/** Блок приложения: свежесть, состояние чтения, отрезок, строки и списки хозяина. */
 function AppBlock({ app, state, screen }: { app: App; state: AppState | undefined; screen: SummaryPeriod }) {
   const summary = state?.seen?.summary
   const line = state ? stateLine(state) : ''
@@ -175,6 +175,31 @@ function AppBlock({ app, state, screen }: { app: App; state: AppState | undefine
           )}
         </>
       )}
+      {block && block.lists.length > 0 && <NameLists lists={block.lists} />}
     </Fold>
+  )
+}
+
+/**
+ * Списки названий после строк (Р-31): подпись, названия столбиком в порядке
+ * хозяина, основание мелко. Пустой список — подпись и основание.
+ */
+function NameLists({ lists }: { lists: readonly NameList[] }) {
+  return (
+    <ul className="plain metrics">
+      {lists.map((list) => (
+        <li key={list.key} className="metric">
+          <div>{list.label}</div>
+          {list.names.length > 0 && (
+            <ul className="plain names">
+              {list.names.map((name, index) => (
+                <li key={index}>{name}</li>
+              ))}
+            </ul>
+          )}
+          <div className="basis">{list.basis}</div>
+        </li>
+      ))}
+    </ul>
   )
 }

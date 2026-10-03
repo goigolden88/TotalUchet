@@ -269,7 +269,16 @@ const POND = 'someone/pond-data'
 
 const DAY = today()
 
-/** Срез «Полки» на сегодня: по сеансу в каждом из четырёх отрезков. */
+/**
+ * Выдуманные списки названий «Полки» (Я-43, Р-31): порядок хозяина — не
+ * алфавитный; второй список пустой — подпись и основание.
+ */
+const LISTS = [
+  { key: 'shelf.reading', label: 'Читаю', names: ['Яблоко', 'Борода'], link: '/reading', basis: 'две книги со статусом «читаю»' },
+  { key: 'shelf.next', label: 'Что почитать', names: [], link: '/next', basis: 'в «прочитать» пусто' },
+]
+
+/** Срез «Полки» на сегодня: по сеансу в каждом из четырёх отрезков и списки названий. */
 const SLICE = (() => {
   const at = `${DAY}T08:00:00.000Z`
   const sessions = [
@@ -278,7 +287,7 @@ const SLICE = (() => {
     { id: 's3', updatedAt: at, date: `${addMonths(monthOf(DAY), -1)}-03`, bookId: 'b', minutes: 130 },
   ]
   const books = [{ id: 'b', updatedAt: at, title: 'Книга', addedOn: null }]
-  return buildSummary(shelfSummary({ sessions, books }, DAY), { sessions, books }, DAY)
+  return buildSummary({ ...shelfSummary({ sessions, books }, DAY), lists: LISTS }, { sessions, books }, DAY)
 })()
 
 const FILE = summaryFile(SLICE)
@@ -545,6 +554,13 @@ async function scenario(profile) {
     const shown = await run(`[...document.querySelectorAll('section.block')].find((el) => el.querySelector('.fold__btn')?.textContent === 'Полка')?.innerText ?? ''`)
     const want = expectedReading(choice.id)
     check(`отрезок «${choice.label}» — ${want}`, has(shown, want), shown.replace(/\s+/g, ' ').slice(0, 120))
+    const flat = shown.replace(/\s+/g, ' ')
+    check(
+      `отрезок «${choice.label}»: списки названий после строк, в порядке хозяина; пустой — подпись и основание (Р-31)`,
+      flat.indexOf('Чтение') < flat.indexOf('Читаю Яблоко Борода две книги со статусом «читаю»') &&
+        has(flat, 'Что почитать в «прочитать» пусто'),
+      flat.slice(flat.indexOf('Читаю'), flat.indexOf('Читаю') + 120),
+    )
   }
 
   // Блок приложения и «Зовут» сворачиваются; у свёрнутого — итог рядом с заголовком.

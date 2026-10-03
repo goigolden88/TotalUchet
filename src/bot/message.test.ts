@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { App } from '../app/model.ts'
-import { buildSummary, type Summary } from '../shared/core/summary.ts'
+import { buildSummary, type NameList, type Summary } from '../shared/core/summary.ts'
 import { shelfSummary, type Session } from '../shared/testing/shelf.ts'
 import { botMessage, escapeHtml, listProblemMessage, MESSAGE_LIMIT, READ_TOKEN_SECRET, type AppRead, type MessageInput } from './message.ts'
 
@@ -100,6 +100,51 @@ describe('сообщение бота — то же, что «Сводка» (Р
   })
 })
 
+describe('списки названий — снаружи цитаты (Я-43, Р-31)', () => {
+  /** Выдуманные списки выдуманной «Полки» (Р-01). */
+  const LISTS: NameList[] = [
+    { key: 'shelf.reading', label: 'Читаю', names: ['Яблоко', 'Борода'], link: '/reading', basis: '2 книги со статусом «читаю»' },
+    { key: 'shelf.next', label: 'Что почитать', names: [], link: '/next', basis: 'в «прочитать» пусто' },
+  ]
+  const withLists = (day: string): Summary => ({ ...summaryOn(day), lists: LISTS })
+
+  it('сразу под шапкой приложения, до цитаты; пустой список — подпись и основание', () => {
+    const html = text([{ app: SHELF, kind: 'read', summary: withLists('2026-09-27') }])
+    expect(html).toContain(
+      '<b>Полка</b>\nпосчитано 27.09 · по записям по 27.09\nидёт, по 27.09\n' +
+        '<b>Читаю</b>: Яблоко, Борода\n<i>2 книги со статусом «читаю»</i>\n' +
+        '<b>Что почитать</b>\n<i>в «прочитать» пусто</i>\n' +
+        '<blockquote expandable>Чтение — 1 ч 55 мин',
+    )
+    const quoted = html.match(/<blockquote[^>]*>[\s\S]*?<\/blockquote>/g) ?? []
+    for (const each of quoted) expect(each).not.toContain('Яблоко')
+  })
+
+  it('в недельном и месячном сообщении', () => {
+    for (const over of [{ choice: 'lastWeek' as const }, { choice: 'lastMonth' as const, today: '2026-10-01' }]) {
+      expect(text([{ app: SHELF, kind: 'read', summary: withLists('2026-09-27') }], over)).toContain('<b>Читаю</b>: Яблоко, Борода')
+    }
+  })
+
+  it('отрезка нет в срезе — списки на месте', () => {
+    const html = text([{ app: SHELF, kind: 'read', summary: { ...summaryOn('2026-09-10'), lists: LISTS } }])
+    expect(html).toContain('<b>Читаю</b>: Яблоко, Борода')
+    expect(html).toContain('не известно: срез посчитан 10.09, этой недели в нём нет')
+  })
+
+  it('нет раздела — блок как прежде', () => {
+    expect(text([{ app: SHELF, kind: 'read', summary: summaryOn('2026-09-27') }])).toContain(
+      '<b>Полка</b>\nпосчитано 27.09 · по записям по 27.09\nидёт, по 27.09\n<blockquote expandable>',
+    )
+  })
+
+  it('подпись, названия и основание экранируются', () => {
+    const odd: NameList = { key: 'k', label: 'A & <B>', names: ['<i>x</i>', 'y & z'], link: '/', basis: '"q" < r' }
+    const html = text([{ app: SHELF, kind: 'read', summary: { ...summaryOn('2026-09-27'), lists: [odd] } }])
+    expect(html).toContain('<b>A &amp; &lt;B&gt;</b>: &lt;i&gt;x&lt;/i&gt;, y &amp; z\n<i>&quot;q&quot; &lt; r</i>')
+  })
+})
+
 describe('токен бота (Р-29)', () => {
   it('401 у всех — одна строка наверху вместо блоков', () => {
     const html = text([
@@ -158,6 +203,13 @@ describe('лимит Телеграма (Р-26)', () => {
     const html = parts.map((part) => part.html).join('\n')
     expect(html.match(/<b>Полка<\/b>/g)?.length).toBeGreaterThan(1)
     for (let index = 0; index < 40; index += 1) expect(html).toContain(`Строка ${index} — `)
+  })
+
+  it('списки названий — в первой части приложения, в продолжении не повторяются (Р-31)', () => {
+    const lists: NameList[] = [{ key: 'k', label: 'Читаю', names: ['Яблоко'], link: '/', basis: 'одна книга' }]
+    const parts = botMessage(input([{ app: SHELF, kind: 'read', summary: { ...wide(40), lists } }]))
+    for (const part of parts) expect(part.html.length).toBeLessThanOrEqual(MESSAGE_LIMIT)
+    expect(parts.map((part) => part.html).join('\n').match(/Яблоко/g)).toHaveLength(1)
   })
 })
 

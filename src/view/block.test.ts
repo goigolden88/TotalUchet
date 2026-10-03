@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { buildSummary, type Summary } from '../shared/core/summary.ts'
+import { buildSummary, type NameList, type Summary } from '../shared/core/summary.ts'
 import { shelfSummary, type Session } from '../shared/testing/shelf.ts'
 import { appBlock } from './block.ts'
-import { screenPeriod } from './periods.ts'
+import { CHOICES, screenPeriod } from './periods.ts'
 
 /** Выдуманный срез «Полки» ядра (Р-01). 24.09.2026 — четверг. */
 const DAY = '2026-09-24'
@@ -46,5 +46,41 @@ describe('блок приложения — одна сборка на «Сво�
       going: 'идёт, по 24.09',
       text: 'не известно — месяцы не считаются',
     })
+  })
+})
+
+describe('списки названий в блоке (Я-43, Р-31)', () => {
+  /** Выдуманные списки выдуманной «Полки» (Р-01): порядок хозяина — не алфавитный. */
+  const LISTS: NameList[] = [
+    { key: 'shelf.reading', label: 'Читаю', names: ['Яблоко', 'Борода'], link: '/reading', basis: '2 книги со статусом «читаю»' },
+    { key: 'shelf.next', label: 'Что почитать', names: [], link: '/next', basis: 'в «прочитать» пусто' },
+  ]
+  const WITH_LISTS: Summary = { ...SUMMARY, lists: LISTS }
+
+  it('нет раздела — списков нет, блок как прежде', () => {
+    expect(SUMMARY.lists).toBeUndefined()
+    expect(appBlock(SUMMARY, screenPeriod('thisWeek', DAY)).lists).toEqual([])
+  })
+
+  it('на всех отрезках — как есть, в порядке хозяина; пустой список — подпись и основание', () => {
+    for (const choice of CHOICES) {
+      expect(appBlock(WITH_LISTS, screenPeriod(choice.id, DAY)).lists).toEqual(LISTS)
+    }
+  })
+
+  it('отрезка нет в срезе — списки на месте', () => {
+    const block = appBlock(WITH_LISTS, screenPeriod('thisWeek', '2026-10-05'))
+    expect(block.body.kind).toBe('missing')
+    expect(block.lists).toEqual(LISTS)
+  })
+
+  it('отрезок «не известно» целиком — списки на месте', () => {
+    const odd: Summary = {
+      ...WITH_LISTS,
+      periods: WITH_LISTS.periods.map((period) => ({ ...period, metrics: { unknown: 'not-provided', text: 'не считается' } })),
+    }
+    const block = appBlock(odd, screenPeriod('lastMonth', DAY))
+    expect(block.body.kind).toBe('unknown')
+    expect(block.lists).toEqual(LISTS)
   })
 })
