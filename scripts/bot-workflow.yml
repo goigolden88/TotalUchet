@@ -1,0 +1,54 @@
+name: Телеграм-бот
+
+# Сводка «Тотального Учёта» в личный чат (его Р-23…Р-29). Код — публичный
+# TotalUchet с main, ядро подмодулем; здесь — только bot.json и секреты.
+# Лог — «отправлено частей: N» или причина словами: ни среза, ни сообщения,
+# ни токенов (Я-33).
+
+on:
+  schedule:
+    - cron: '0 4 * * 1' # понедельник 09:00 по +05:00 — прошлая неделя
+    - cron: '0 4 1 * *' # 1-е число 09:00 по +05:00 — прошлый месяц
+  workflow_dispatch:
+    inputs:
+      period:
+        description: Отрезок
+        type: choice
+        options: [lastWeek, lastMonth]
+        default: lastWeek
+
+permissions:
+  contents: read
+
+jobs:
+  send:
+    name: Сводка
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Этот репозиторий — ради bot.json.
+      - uses: actions/checkout@v4
+        with:
+          path: own
+
+      # Код бота. Оба репозитория публичны — токен не нужен.
+      - uses: actions/checkout@v4
+        with:
+          repository: goigolden88/TotalUchet
+          ref: main
+          submodules: true
+          path: app
+
+      # Node 24 читает TypeScript без сборки: npm ci не нужен.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - run: node app/scripts/bot.mjs
+        env:
+          READ_TOKEN: ${{ secrets.READ_TOKEN }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT: ${{ secrets.TELEGRAM_CHAT }}
+          BOT_LIST: own/bot.json
+          BOT_PERIOD: ${{ inputs.period || (github.event.schedule == '0 4 1 * *' && 'lastMonth' || 'lastWeek') }}
+          TZ: ${{ vars.TZ }}
