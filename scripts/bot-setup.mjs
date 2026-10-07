@@ -26,6 +26,7 @@ import {
   botUsername,
   chatFromUpdates,
   checkRepo,
+  filePath,
   NOT_PRIVATE_CHAT,
   parseSetup,
   renderWorkflow,
@@ -186,7 +187,7 @@ async function answers(config, template, dryRun) {
 
   const files = []
   for (const file of config.files) {
-    const path = resolve(await ask(file.ask))
+    const path = resolve(filePath(await ask(file.ask)))
     let content
     try {
       content = await readFile(path, 'utf8')
