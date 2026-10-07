@@ -6,6 +6,7 @@ import {
   chatFromUpdates,
   checkRepo,
   cronExpressions,
+  filePath,
   formatOffset,
   parseSetup,
   renderWorkflow,
@@ -74,6 +75,17 @@ describe('описание бота', () => {
     expect(checkRepo('someone/pond.bot')).toBe('someone/pond.bot')
     expect(checkRepo('a/b/c')).toBeNull()
     expect(checkRepo('с пробелом')).toBeNull()
+  })
+
+  it('путь к файлу — без обрамляющих кавычек', () => {
+    expect(filePath('"C:\\Пруд\\pond.json"')).toBe('C:\\Пруд\\pond.json')
+    expect(filePath("  '/home/someone/pond.json'  ")).toBe('/home/someone/pond.json')
+    expect(filePath(' C:\\Пруд\\pond.json ')).toBe('C:\\Пруд\\pond.json')
+    expect(filePath('"C:\\Мой "пруд"\\pond.json"')).toBe('C:\\Мой "пруд"\\pond.json')
+    expect(filePath('/pond/"x".json')).toBe('/pond/"x".json')
+    expect(filePath('"C:\\pond.json\'')).toBe('"C:\\pond.json\'')
+    expect(filePath('"')).toBe('"')
+    expect(filePath('""')).toBe('')
   })
 })
 

@@ -131,6 +131,17 @@ export function checkRepo(answer: string): string | null {
   return /^([A-Za-z0-9-]+\/)?[A-Za-z0-9._-]+$/.test(repo) ? repo : null
 }
 
+/**
+ * Путь к файлу из ответа: пробелы по краям и одна пара обрамляющих кавычек
+ * снимаются — Windows «Копировать как путь» даёт путь в двойных кавычках.
+ * Кавычки внутри пути не трогаются.
+ */
+export function filePath(answer: string): string {
+  const path = answer.trim()
+  const quote = path[0]
+  return path.length >= 2 && (quote === '"' || quote === "'") && path.endsWith(quote) ? path.slice(1, -1) : path
+}
+
 /** `09:00` → минуты от полуночи; не время — `null`. */
 export function clockMinutes(clock: string): number | null {
   const match = /^(\d{2}):(\d{2})$/.exec(clock)
