@@ -1,0 +1,27 @@
+{
+  "kind": "bot-setup",
+  "version": 1,
+  "title": "Телеграм-бот «Тотального Учёта»",
+  "manual": "docs/06-Процесс.md, «Телеграм-бот: как завести»",
+  "repo": "totaluchet-bot",
+  "workflow": {
+    "template": "bot-workflow.yml",
+    "path": ".github/workflows/bot.yml",
+    "time": "09:00",
+    "zone": "+05:00",
+    "lines": ["- cron:", "BOT_PERIOD:"]
+  },
+  "secrets": [
+    { "name": "TELEGRAM_TOKEN", "source": "telegram", "ask": "Токен бота от @BotFather" },
+    { "name": "READ_TOKEN", "source": "hidden", "ask": "Токен чтения бота (GitHub, Contents: Read-only)" },
+    { "name": "TELEGRAM_CHAT", "source": "chat" }
+  ],
+  "variables": [{ "name": "TZ", "source": "zone" }],
+  "files": [
+    {
+      "path": "bot.json",
+      "ask": "Путь к bot.json («Настройки» → «Телеграм-бот» → «Скачать список для бота»)"
+    }
+  ],
+  "trial": { "period": "lastWeek" }
+}

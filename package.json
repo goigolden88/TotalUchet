@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "smoke": "node scripts/smoke.mjs",
     "bot": "node scripts/bot.mjs",
+    "bot:setup": "node scripts/bot-setup.mjs",
     "icons": "node scripts/icons.mjs"
   },
   "dependencies": {
