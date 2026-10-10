@@ -19,7 +19,7 @@ import { useApps } from '../ui/useApps.ts'
 import { useBase, type BaseCounts } from '../ui/useBase.ts'
 import { saveTitle, useTitle } from '../ui/useTitle.ts'
 import { useToken } from '../ui/useToken.ts'
-import { FAMILY_TAB } from './tabs.ts'
+import { FAMILY_TAB, SUMMARY_TAB } from './tabs.ts'
 
 /** Когда в последний раз сохраняли копию файлом. В `settings`: у каждого устройства своё. */
 const LAST_EXPORT = 'lastExportAt'
@@ -79,7 +79,38 @@ function SyncSection() {
           удаление разойдётся само.
         </p>
       </Fold>
+      <NewDeviceHelp />
     </>
+  )
+}
+
+/**
+ * Новое устройство за два действия (Р-34, Я-37): токен «семья» один раз
+ * и имя своего репозитория данных; имена остальным раздаёт чтение срезов.
+ */
+function NewDeviceHelp() {
+  const title = useTitle()
+  return (
+    <Fold id="settings:sync:device" title="Как настроить новое устройство" folded>
+      <ol className="muted">
+        <li>Впиши токен «семья» один раз — здесь, в «Синхронизации», или в любом приложении семьи.</li>
+        <li>
+          Впиши здесь, в «Синхронизации», имя репозитория данных «{title}». Приедет список приложений
+          из «{FAMILY_TAB.name}».
+        </li>
+        <li>
+          Открой «{SUMMARY_TAB.name}» или «{FAMILY_TAB.name}»: при чтении срезов «{title}» сам впишет каждому
+          приложению семьи имя его репозитория данных. Открой остальные приложения — синхронизация в них включится
+          сама, записи вернутся.
+        </li>
+      </ol>
+      <p className="muted">
+        Имя, уже вписанное в приложении, не меняется. Если в «{FAMILY_TAB.name}» у приложения написано «имя на
+        устройстве другое», проверь, какое верное: верное в списке — нажми там «Записать имя из списка», верное
+        на устройстве — поправь репозиторий в списке. Если написано «не знаю, какое это приложение», имя ему
+        впиши в нём самом, в его синхронизации.
+      </p>
+    </Fold>
   )
 }
 

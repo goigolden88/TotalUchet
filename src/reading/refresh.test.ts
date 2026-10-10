@@ -83,6 +83,15 @@ describe('обновление приложения — чтение и архи
     expect(stateLine(state)).toContain('; ниже — срез, прочитан')
   })
 
+  it('dbName из meta.json — в состоянии; без meta.json — null; не дочитали — нет (Р-34)', async () => {
+    const file = fileOn('2026-09-24')
+    const files = { [file.path]: file.content, 'meta.json': '{"app":"polka","schemaVersion":1}' }
+    const state = await refreshApp(APP, TOKEN, { fetch: fakeGitHub({ [APP.dataRepo]: { files } }).fetch, now })
+    expect(state.dbName).toBe('polka')
+    expect((await refreshApp(APP, TOKEN, { fetch: fakeGitHub(repoWith('2026-09-24')).fetch, now })).dbName).toBeNull()
+    expect((await refreshApp(APP, TOKEN, { fetch: fakeGitHub({}).fetch, now })).dbName).toBeUndefined()
+  })
+
   it('нет доступа — ошибка приложения, архив не трогается', async () => {
     const state = await refreshApp(APP, TOKEN, { fetch: fakeGitHub({}).fetch, now })
     expect(state.status).toBe('noAccess')

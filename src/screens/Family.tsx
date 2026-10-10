@@ -1,14 +1,17 @@
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { checkApp, nextOrder, type AppInput } from '../app/apps.ts'
+import { config } from '../app/config.ts'
 import { db } from '../app/core.ts'
 import type { App } from '../app/model.ts'
 import { isCalm, stateLine, type AppState } from '../reading/refresh.ts'
+import { repoStatus, repoStatusText } from '../reading/repos.ts'
 import { nowIso } from '../shared/core/dates.ts'
 import { ulid } from '../shared/core/id.ts'
 import { Fold } from '../shared/ui/Fold.tsx'
 import { foldSummary, useReadOnOpen } from '../ui/reading.tsx'
 import { useArchiveLabels, useBundles } from '../ui/useBundles.ts'
+import { useTitle } from '../ui/useTitle.ts'
 import { freshness } from '../view/periods.ts'
 import { BundlesSection } from './Bundles.tsx'
 import { Head } from './Head.tsx'
@@ -26,11 +29,14 @@ import { FAMILY_TAB, SUMMARY_TAB } from './tabs.ts'
  * со ссылкой на сайт каждого: поставить соседа отсюда браузер не даёт,
  * отметки «установлено» нет (Р-07).
  *
+ * У каждого — сверка имени его репозитория в общей базе устройства со
+ * списком (Р-34): занятое другим именем переписывает только человек.
+ *
  * Ниже приложений — связки (Р-21): со «Сводки» сюда ведёт ссылка
  * `?bundle=<id>`, и форма этой связки открыта.
  */
 export function Family() {
-  const { apps, token, states } = useReadOnOpen()
+  const { apps, token, states, repos, writeRepo } = useReadOnOpen()
   const bundles = useBundles()
   const archive = useArchiveLabels(bundles)
   const [params, setParams] = useSearchParams()
@@ -67,6 +73,8 @@ export function Family() {
               <div className="family__app">
                 <AppLine state={states.get(app.id)} />
                 <div className="muted">{app.dataRepo}</div>
+                <RepoLine app={app} dbName={states.get(app.id)?.dbName} repos={repos} onWrite={writeRepo} />
+
                 <a href={app.site} target="_blank" rel="noopener">
                   {app.site}
                 </a>
@@ -144,6 +152,53 @@ function AppLine({ state }: { state: AppState | undefined }) {
     <>
       {state.seen && <div className="muted">{freshness(state.seen.summary)}</div>}
       {line && <div className={isCalm(state) ? 'muted' : 'error'}>{line}</div>}
+    </>
+  )
+}
+
+/**
+ * Имя приложения в общей базе устройства против имени в списке (Р-34):
+ * по нему соседняя синхронизация знает свой репозиторий. Пустое место
+ * заполняет проход чтения; занятое другим — только эта кнопка (Я-37).
+ */
+function RepoLine({
+  app,
+  dbName,
+  repos,
+  onWrite,
+}: {
+  app: App
+  dbName: string | null | undefined
+  repos: Readonly<Record<string, string>> | undefined
+  onWrite: (dbName: string, repo: string) => Promise<void>
+}) {
+  const title = useTitle()
+  const [error, setError] = useState('')
+  if (repos === undefined) return null
+  const status = repoStatus(dbName, app.dataRepo, repos, config.dbName)
+  const text = repoStatusText(status, title)
+  if (text === '') return null
+
+  async function write(name: string) {
+    setError('')
+    try {
+      await onWrite(name, app.dataRepo)
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'не записалось')
+    }
+  }
+
+  return (
+    <>
+      <div className="muted">{text}</div>
+      {status.kind === 'other' && dbName && (
+        <div className="row row--wrap">
+          <button type="button" className="btn" onClick={() => void write(dbName)}>
+            Записать имя из списка
+          </button>
+        </div>
+      )}
+      {error && <div className="error">{error}</div>}
     </>
   )
 }

@@ -9,12 +9,19 @@
  * в фоне — нет. Сразу — последние увиденные срезы из архива: без сети это
  * всё, что есть. Каждое приложение читается само по себе, ошибка одного
  * не трогает остальных.
+ *
+ * После прохода — имена репозиториев соседям в пустые места общей базы
+ * (Р-34): `dbName` каждого узнаёт само чтение. Что лежит в общей базе,
+ * держится здесь же — «Семья» сверяет с ним список.
  */
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { config } from '../app/config.ts'
 import type { App } from '../app/model.ts'
 import { brief, refreshApp, stored, type AppState } from '../reading/refresh.ts'
+import { shareRepos } from '../reading/repos.ts'
 import { lastSeenAll } from '../reading/seen.ts'
+import { family } from '../shared/core/db.ts'
 import { useApps } from './useApps.ts'
 import { reloadToken, useToken } from './useToken.ts'
 
@@ -29,6 +36,10 @@ export type Reading = {
   reading: number
   /** Прочитать все заново. Без токена или приложений — ничего. */
   refresh: () => void
+  /** Имена репозиториев в общей базе устройства по `dbName`; `undefined` — ещё читаются. */
+  repos: Readonly<Record<string, string>> | undefined
+  /** Записать имя в общую базу — действие человека, занятое переписывается (Я-37). */
+  writeRepo: (dbName: string, repo: string) => Promise<void>
 }
 
 const ReadingContext = createContext<Reading | null>(null)
@@ -39,8 +50,30 @@ export function ReadingProvider({ children }: { children: ReactNode }) {
 
   const [states, setStates] = useState<ReadonlyMap<string, AppState>>(new Map())
   const [reading, setReading] = useState(0)
+  const [repos, setRepos] = useState<Readonly<Record<string, string>> | undefined>(undefined)
   // Итоги прежнего прохода — другого токена или списка — не показываются.
   const pass = useRef(0)
+
+  // Общая база не открылась — прежнее остаётся: строки сверки просто нет.
+  const reloadRepos = useCallback(async () => {
+    try {
+      setRepos((await family.read()).repos)
+    } catch {
+      // Сказать нечего: чтение срезов от этого не зависит.
+    }
+  }, [])
+
+  useEffect(() => {
+    void reloadRepos()
+  }, [reloadRepos])
+
+  const writeRepo = useCallback(
+    async (dbName: string, repo: string) => {
+      await family.setRepo(dbName, repo)
+      await reloadRepos()
+    },
+    [reloadRepos],
+  )
 
   const appsKey = apps?.map((app) => `${app.id}:${app.dataRepo}`).join('|')
 
@@ -66,17 +99,38 @@ export function ReadingProvider({ children }: { children: ReactNode }) {
     if (!token || !apps || apps.length === 0) return
     const current = ++pass.current
     setReading(apps.length)
-    for (const app of apps) {
-      void refreshApp(app, token).then((state) => {
+    // Соседнее приложение могло вписать своё имя, пока нас не было.
+    void reloadRepos()
+    const dbNames = new Map<string, string | null>()
+    const reads = apps.map((app) =>
+      refreshApp(app, token).then((state) => {
         if (pass.current !== current) return
-        setStates((before) => new Map(before).set(app.id, state))
+        if (state.dbName !== undefined) dbNames.set(app.id, state.dbName)
+        setStates((before) => {
+          // Чтение не дошло до дерева — прежний `dbName` не забывается.
+          const known = state.dbName === undefined ? before.get(app.id)?.dbName : state.dbName
+          return new Map(before).set(app.id, { ...state, dbName: known })
+        })
         setReading((left) => left - 1)
-      })
-    }
+      }),
+    )
+    void Promise.all(reads).then(async () => {
+      if (pass.current !== current) return
+      try {
+        await shareRepos(apps, dbNames, config.dbName)
+      } catch {
+        // Общая база не открылась — имена впишутся при следующем чтении.
+      }
+      await reloadRepos()
+    })
     // Список сравнивается по appsKey: новый массив с теми же репозиториями — не повод читать заново.
   }, [token, appsKey])
 
-  return <ReadingContext.Provider value={{ apps, token, states, reading, refresh }}>{children}</ReadingContext.Provider>
+  return (
+    <ReadingContext.Provider value={{ apps, token, states, reading, refresh, repos, writeRepo }}>
+      {children}
+    </ReadingContext.Provider>
+  )
 }
 
 export function useReading(): Reading {

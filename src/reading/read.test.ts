@@ -3,7 +3,7 @@ import { blobSha } from '../shared/core/github.ts'
 import { buildSummary, summaryFile } from '../shared/core/summary.ts'
 import { shelfSummary } from '../shared/testing/shelf.ts'
 import { fakeGitHub } from './fakeGitHub.ts'
-import { NOT_GIVEN, readSummary } from './read.ts'
+import { appOf, NOT_GIVEN, readSummary } from './read.ts'
 
 /** Выдуманные: репозиторий, токен, срез «Полки» ядра (Р-01). */
 const REPO = 'someone/shelf-data'
@@ -87,10 +87,60 @@ describe('чтение среза — доступ, потом файл (Р-05)'
     expect(github.paths).toEqual([])
   })
 
+  it('без withApp meta.json не качается — так читает бот', async () => {
+    const github = fakeGitHub({ [REPO]: { files: FILES } })
+    const result = await read(github)
+    expect(result).not.toHaveProperty('dbName')
+    expect(github.paths.filter((path) => path.includes('/git/blobs/'))).toHaveLength(1)
+  })
+
   it('токен — только в заголовке Authorization', async () => {
     const github = fakeGitHub({ [REPO]: { files: FILES } })
     await read(github)
     expect(github.auth.every((value) => value === `Bearer ${TOKEN}`)).toBe(true)
     expect(github.paths.some((path) => path.includes(TOKEN))).toBe(false)
+  })
+})
+
+describe('dbName приложения из meta.json (Р-34)', () => {
+  function named(github: ReturnType<typeof fakeGitHub>, lastSha: string | null = null) {
+    return readSummary({ dataRepo: REPO, token: TOKEN, lastSha, withApp: true, fetch: github.fetch })
+  }
+
+  it('тем же проходом: поле app, ещё один blob — meta.json', async () => {
+    const github = fakeGitHub({ [REPO]: { files: FILES } })
+    const result = await named(github)
+    expect(result).toEqual({ kind: 'new', sha: await blobSha(FILE.content), summary: SUMMARY, dbName: 'polka' })
+    expect(github.paths.filter((path) => path.includes('/git/blobs/')).sort()).toEqual(
+      [`${REPO}/git/blobs/${await blobSha(FILE.content)}`, `${REPO}/git/blobs/${await blobSha(FILES['meta.json'])}`].sort(),
+    )
+  })
+
+  it('тот же срез — dbName всё равно узнаётся', async () => {
+    const result = await named(fakeGitHub({ [REPO]: { files: FILES } }), await blobSha(FILE.content))
+    expect(result).toEqual({ kind: 'same', dbName: 'polka' })
+  })
+
+  it('срез не отдаёт, а meta.json есть — dbName есть', async () => {
+    const result = await named(fakeGitHub({ [REPO]: { files: { 'meta.json': '{"app":"polka"}' } } }))
+    expect(result).toEqual({ kind: 'none', text: NOT_GIVEN, dbName: 'polka' })
+  })
+
+  it('нет meta.json, нет поля app или файл кривой — null, срез читается как был', async () => {
+    const without = await named(fakeGitHub({ [REPO]: { files: { [FILE.path]: FILE.content } } }))
+    expect(without).toMatchObject({ kind: 'new', dbName: null })
+    const noApp = await named(fakeGitHub({ [REPO]: { files: { ...FILES, 'meta.json': '{"schemaVersion":1}' } } }))
+    expect(noApp).toMatchObject({ kind: 'new', dbName: null })
+    const crooked = await named(fakeGitHub({ [REPO]: { files: { ...FILES, 'meta.json': 'не JSON' } } }))
+    expect(crooked).toMatchObject({ kind: 'new', dbName: null })
+    expect(await named(fakeGitHub({ [REPO]: { files: null } }))).toEqual({ kind: 'none', text: NOT_GIVEN, dbName: null })
+  })
+
+  it('из meta.json берётся только строка app', () => {
+    expect(appOf('{"app":" polka ","schemaVersion":1}')).toBe('polka')
+    expect(appOf('{"app":7}')).toBeNull()
+    expect(appOf('{"app":""}')).toBeNull()
+    expect(appOf('null')).toBeNull()
+    expect(appOf('[]')).toBeNull()
   })
 })

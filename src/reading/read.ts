@@ -11,25 +11,33 @@
  * («нужен Read and write», «отправка отложена»), поэтому здесь — свои,
  * по коду ответа.
  *
- * Читается только `SUMMARY_PATH` ядра (Я-11, Я-16). Токен приходит
+ * Читается только `SUMMARY_PATH` ядра (Я-11, Я-16) и, по просьбе, поле
+ * `app` из `META_PATH` — `dbName` приложения (Я-24, Р-34). Токен приходит
  * параметром и никуда, кроме заголовка запроса, не попадает.
  */
 
-import { createClient, GitHubError, parseRepo } from '../shared/core/github.ts'
+import { createClient, GitHubError, parseRepo, type TreeEntry } from '../shared/core/github.ts'
+import { META_PATH } from '../shared/core/layout.ts'
 import { parseSummary, SUMMARY_PATH, type Summary } from '../shared/core/summary.ts'
 
 /** Почему не прочиталось — у каждой причины своё действие человека (Р-05). */
 export type Failure = 'badRepo' | 'noAccess' | 'badToken' | 'noRights' | 'limit' | 'offline' | 'other'
 
+/**
+ * `dbName` приложения из его `meta.json` (Р-34): `null` — файла или поля
+ * `app` нет. Не просили (`withApp`) — поля нет вовсе.
+ */
+type Named = { dbName?: string | null }
+
 export type ReadResult =
   /** Новый срез: его — в архив. */
-  | { kind: 'new'; sha: string; summary: Summary }
+  | ({ kind: 'new'; sha: string; summary: Summary } & Named)
   /** Отпечаток тот же, что у последнего увиденного: файл не качали. */
-  | { kind: 'same' }
+  | ({ kind: 'same' } & Named)
   /** `summary.json` нет — дело приложения, не ошибка (Я-16). */
-  | { kind: 'none'; text: string }
+  | ({ kind: 'none'; text: string } & Named)
   /** Файл есть, но с формой не сходится: словами ядра. */
-  | { kind: 'broken'; text: string }
+  | ({ kind: 'broken'; text: string } & Named)
   | { kind: 'failed'; failure: Failure; text: string }
 
 export type ReadOptions = {
@@ -38,6 +46,11 @@ export type ReadOptions = {
   token: string
   /** Отпечаток последнего увиденного среза; `null` — не видели. */
   lastSha: string | null
+  /**
+   * Узнать и `dbName` приложения — ещё один GET (Р-34). Нужно «Семье»,
+   * чтобы раздать имена репозиториев; боту — нет.
+   */
+  withApp?: boolean
   /** Подменяется в тестах. */
   fetch?: typeof globalThis.fetch
 }
@@ -126,8 +139,35 @@ export async function checkAccess({ dataRepo, token, fetch = globalThis.fetch }:
   }
 }
 
+/** Поле `app` из текста `meta.json`; не JSON, нет поля или оно не строка — `null`. */
+export function appOf(text: string): string | null {
+  let data: unknown
+  try {
+    data = JSON.parse(text)
+  } catch {
+    return null
+  }
+  if (typeof data !== 'object' || data === null) return null
+  const app = (data as { app?: unknown }).app
+  return typeof app === 'string' && app.trim() !== '' ? app.trim() : null
+}
+
+/**
+ * `dbName` из `meta.json` того же дерева (Я-24, Р-34). Из файла берётся только
+ * `app`. Не прочиталось — `null`: срезу это не мешает.
+ */
+async function dbNameOf(tree: readonly TreeEntry[], blob: (sha: string) => Promise<string>): Promise<string | null> {
+  const entry = tree.find((file) => file.path === META_PATH)
+  if (!entry) return null
+  try {
+    return appOf(await blob(entry.sha))
+  } catch {
+    return null
+  }
+}
+
 /** Прочитать срез одного приложения. Не кидает: всё, что пошло не так, — в итоге словами. */
-export async function readSummary({ dataRepo, token, lastSha, fetch = globalThis.fetch }: ReadOptions): Promise<ReadResult> {
+export async function readSummary({ dataRepo, token, lastSha, withApp = false, fetch = globalThis.fetch }: ReadOptions): Promise<ReadResult> {
   let repo: { owner: string; name: string }
   try {
     repo = parseRepo(dataRepo)
@@ -148,16 +188,18 @@ export async function readSummary({ dataRepo, token, lastSha, fetch = globalThis
   try {
     const client = createClient({ repo: { ...repo, branch }, token, fetch: net.fetch })
     const head = await client.head()
-    // Пустой репозиторий: ни одного коммита — и среза нет.
-    if (head === null) return { kind: 'none', text: NOT_GIVEN }
-    const entry = (await client.tree(head)).find((file) => file.path === SUMMARY_PATH)
-    if (!entry) return { kind: 'none', text: NOT_GIVEN }
-    if (entry.sha === lastSha) return { kind: 'same' }
+    // Пустой репозиторий: ни одного коммита — ни среза, ни `meta.json`.
+    if (head === null) return { kind: 'none', text: NOT_GIVEN, ...(withApp ? { dbName: null } : {}) }
+    const tree = await client.tree(head)
+    const named: Named = withApp ? { dbName: await dbNameOf(tree, (sha) => client.blob(sha)) } : {}
+    const entry = tree.find((file) => file.path === SUMMARY_PATH)
+    if (!entry) return { kind: 'none', text: NOT_GIVEN, ...named }
+    if (entry.sha === lastSha) return { kind: 'same', ...named }
     const text = await client.blob(entry.sha)
     try {
-      return { kind: 'new', sha: entry.sha, summary: parseSummary(text) }
+      return { kind: 'new', sha: entry.sha, summary: parseSummary(text), ...named }
     } catch (error) {
-      return { kind: 'broken', text: error instanceof Error ? error.message : 'срез не разобран' }
+      return { kind: 'broken', text: error instanceof Error ? error.message : 'срез не разобран', ...named }
     }
   } catch (error) {
     return explain(error, dataRepo, net.offline(), false)
