@@ -5,11 +5,14 @@
  * этот `db`: напрямую в IndexedDB не ходит никто, кроме `shared/core/db.ts`.
  * Общий интерфейс ядра получает его контекстом — `<CoreProvider>` в `app.tsx`.
  *
- * `createSync` не вызывается: своей синхронизации нет (Р-02, Я-23).
- * `CoreProvider` получает `config` и `db`, без `sync` (Я-29, Р-16).
+ * Синхронизация своих записей — ядром, токеном «семья» (Р-33, Я-36):
+ * `apps`, `seen`, `bundles` в свой репозиторий данных. `sync` — тоже
+ * в `CoreProvider`.
  */
 
 import { createDb } from '../shared/core/db.ts'
+import { createSync } from '../shared/core/sync.ts'
 import { config } from './config.ts'
 
 export const db = createDb(config)
+export const sync = createSync(config, db)

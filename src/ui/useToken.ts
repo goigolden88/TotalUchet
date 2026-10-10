@@ -1,54 +1,81 @@
 /**
- * Токен чтения (Я-16, Я-27, Р-02): `settings.readToken` устройства.
+ * Токен «семья» для чтения срезов (Р-33, Я-36): из общей базы ядра,
+ * `family.read().token`, — тот же, которым синхронизируются все приложения
+ * семьи на устройстве. Своего токена у «Тотального Учёта» нет.
  *
- * Не синхронизируется и в файл-копию не входит — `settings` ядра туда
- * не попадает. На экран не выводится: только «вписан» или «не вписан».
- * Экраны узнают о замене сразу — «Сводка» читает новым токеном.
+ * Вписывают, меняют и забывают его в «Синхронизации» — здесь или в любом
+ * приложении семьи. Подписки у общей базы нет, поэтому токен перечитывается:
+ * при запуске, при открытии «Сводки», «Семьи» и «Настроек» (`reloadToken`)
+ * и при возврате на вкладку — замена в соседнем приложении видна без
+ * перезапуска. На экран не выводится: только «есть» или «нет».
  */
 
 import { useEffect, useSyncExternalStore } from 'react'
 import { db } from '../app/core.ts'
+import { family } from '../shared/core/db.ts'
 
-/** Ключ в `settings` — по Архитектуре, «Настройки устройства». */
-export const TOKEN_KEY = 'readToken'
+/**
+ * Где лежал прежний токен чтения (Я-16, Я-27). Читать его некому: при запуске
+ * он удаляется (`dropReadToken`) и в общую базу не переносится никогда —
+ * токен только на чтение на месте «семьи» сломал бы запись всем приложениям.
+ */
+export const OLD_TOKEN_KEY = 'readToken'
 
 /** `undefined` — ещё не прочитан из базы; `null` — не вписан. */
 let current: string | null | undefined
-let loading: Promise<void> | null = null
 const listeners = new Set<() => void>()
 
 function publish(token: string | null): void {
+  if (token === current) return
   current = token
   for (const listener of listeners) listener()
 }
 
-function load(): Promise<void> {
-  loading ??= db.settings.get<string>(TOKEN_KEY).then((value) => publish(typeof value === 'string' && value !== '' ? value : null))
-  return loading
+/**
+ * Перечитать токен из общей базы. Не открылась — прежнее значение остаётся;
+ * при первом чтении — «нет токена»: экран не висит на «читаю».
+ */
+export async function reloadToken(): Promise<void> {
+  try {
+    publish((await family.read()).token)
+  } catch {
+    if (current === undefined) publish(null)
+  }
 }
 
-/** Вписать. Пробелы по краям — след копирования, не часть токена. */
-export async function saveToken(input: string): Promise<void> {
-  const token = input.trim()
-  if (token === '') return forgetToken()
-  await db.settings.set(TOKEN_KEY, token)
-  publish(token)
+/** Последний прочитанный токен — снимок для экрана. */
+export function currentToken(): string | null | undefined {
+  return current
 }
 
-export async function forgetToken(): Promise<void> {
-  await db.settings.remove(TOKEN_KEY)
-  publish(null)
+/** Прежний токен чтения — с устройства (Р-33). Нет его — ничего. */
+export async function dropReadToken(): Promise<void> {
+  await db.settings.remove(OLD_TOKEN_KEY)
+}
+
+function onVisible(): void {
+  if (document.visibilityState === 'visible') void reloadToken()
 }
 
 function subscribe(listener: () => void): () => void {
   listeners.add(listener)
-  return () => listeners.delete(listener)
+  if (listeners.size === 1) {
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+  }
+  return () => {
+    listeners.delete(listener)
+    if (listeners.size === 0) {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
+  }
 }
 
-/** Токен устройства: `undefined`, пока читается из базы. */
+/** Токен «семья»: `undefined`, пока читается из общей базы. Перечитывается при появлении. */
 export function useToken(): string | null | undefined {
   useEffect(() => {
-    void load()
+    void reloadToken()
   }, [])
-  return useSyncExternalStore(subscribe, () => current)
+  return useSyncExternalStore(subscribe, currentToken)
 }

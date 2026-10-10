@@ -5,22 +5,21 @@ import { SCHEMA_VERSION, type Store } from '../app/model.ts'
 import { CHANGES } from '../changes.ts'
 import { today } from '../shared/core/dates.ts'
 import { ChangeList } from '../shared/screens/WhatsNew.tsx'
-import { backupNote, backupSummary, type SyncFacts } from '../shared/ui/backup.ts'
+import { backupNote, backupSummary } from '../shared/ui/backup.ts'
 import { Fold } from '../shared/ui/Fold.tsx'
 import { InstallNote } from '../shared/ui/Install.tsx'
 import { ReportBug } from '../shared/ui/Report.tsx'
+import { SyncSettings } from '../shared/ui/SyncSettings.tsx'
+import { useSyncStatus } from '../shared/ui/useSync.ts'
 import type { App } from '../app/model.ts'
 import { botList, LIST_FILE, listText } from '../bot/list.ts'
-import { checkAccess, RIGHTS_UNKNOWN, type Access } from '../reading/read.ts'
+import { checkAccess, type Access } from '../reading/read.ts'
 import { DEFAULT_TITLE, MAX_TITLE } from '../ui/title.ts'
 import { useApps } from '../ui/useApps.ts'
 import { useBase, type BaseCounts } from '../ui/useBase.ts'
 import { saveTitle, useTitle } from '../ui/useTitle.ts'
-import { forgetToken, saveToken, useToken } from '../ui/useToken.ts'
+import { useToken } from '../ui/useToken.ts'
 import { FAMILY_TAB } from './tabs.ts'
-
-/** Своей синхронизации нет (Р-02): копия данных — только файлом. */
-const NO_SYNC: SyncFacts = { state: 'off', lastAt: null }
 
 /** Когда в последний раз сохраняли копию файлом. В `settings`: у каждого устройства своё. */
 const LAST_EXPORT = 'lastExportAt'
@@ -37,7 +36,8 @@ function describe(error: unknown): string {
 
 /**
  * «Настройки» — шестерёнкой в шапке. Разделы свёрнуты, пока их не открыли:
- * сюда заходят за чем-то одним; токен не вписан — его раздел открыт.
+ * сюда заходят за чем-то одним. Токена нет — это видно у свёрнутого
+ * «Доступа к приложениям» и подсказкой на «Сводке».
  */
 export function Settings() {
   const base = useBase()
@@ -48,7 +48,8 @@ export function Settings() {
         <h1>Настройки</h1>
       </header>
 
-      <TokenSection />
+      <SyncSection />
+      <AccessSection />
       <TitleSection />
       <DataCopy base={base} />
       <BotSection />
@@ -58,36 +59,40 @@ export function Settings() {
 }
 
 /**
- * Токен чтения (Я-16, Я-27): вписать, заменить, забыть, проверить доступ
- * к репозиторию каждого приложения. Сам токен на экран не выводится;
- * его права GitHub не сообщает (Р-12).
+ * Своя синхронизация (Р-33, Я-36): `SyncSettings` ядра — свой репозиторий
+ * данных и токен «семья». Ниже — как она устроена у «Тотального Учёта»:
+ * что едет и с какого устройства включать первым.
  */
-function TokenSection() {
+function SyncSection() {
+  return (
+    <>
+      <SyncSettings onChanged={async () => {}} />
+      <Fold id="settings:sync:help" title="Как переезжает список" folded>
+        <p className="muted">
+          Токен «семья» — один для всех приложений семьи на этом устройстве: вписанный здесь или в любом из них, он
+          читает срезы и синхронизирует. В свой репозиторий данных уезжают приложения из «{FAMILY_TAB.name}», связки
+          и увиденные срезы; на другом устройстве они приезжают сами, правка и удаление — тоже.
+        </p>
+        <p className="muted">
+          Включай синхронизацию первым на устройстве, где список правильный. Если на втором устройстве список уже
+          вносили руками отдельно — после первого обмена приложения задвоятся: лишнее убери в «{FAMILY_TAB.name}»,
+          удаление разойдётся само.
+        </p>
+      </Fold>
+    </>
+  )
+}
+
+/**
+ * Доступ к репозиториям данных приложений (Р-05, Р-33): видит ли токен
+ * «семья» каждый. Тем же `checkAccess`, что до него у токена чтения; полное
+ * имя — чтобы сверить с вписанным (Я-25). Сам токен на экран не выводится.
+ */
+function AccessSection() {
   const token = useToken()
   const apps = useApps()
-  const [draft, setDraft] = useState('')
-  const [editing, setEditing] = useState(false)
-  const [note, setNote] = useState('')
   const [checks, setChecks] = useState<{ app: App; access: Access }[] | null>(null)
   const [checking, setChecking] = useState(false)
-
-  async function save() {
-    try {
-      await saveToken(draft)
-      setDraft('')
-      setEditing(false)
-      setChecks(null)
-      setNote('Токен вписан')
-    } catch (error) {
-      setNote(`Не сохранилось: ${describe(error)}`)
-    }
-  }
-
-  async function forget() {
-    await forgetToken()
-    setChecks(null)
-    setNote('Токен забыт на этом устройстве')
-  }
 
   async function check() {
     if (!token || !apps) return
@@ -98,72 +103,30 @@ function TokenSection() {
     setChecking(false)
   }
 
-  const showInput = token === null || editing
-
   return (
     <Fold
-      id="settings:token"
-      title="Токен чтения"
-      summary={token === undefined ? undefined : token === null ? <span className="error">не вписан</span> : 'вписан'}
-      reveal={token === null}
+      id="settings:access"
+      title="Доступ к приложениям"
+      summary={token === undefined ? undefined : token === null ? <span className="error">нет токена</span> : undefined}
       folded
     >
       <p className="muted">
-        Fine-grained токен GitHub: Contents — Read-only, только репозитории данных семьи. Один на все
-        устройства; хранится только на этом, в копию данных не входит.
+        Видит ли токен «семья» репозиторий данных каждого приложения из «{FAMILY_TAB.name}» — без этого его срез не
+        читается.
       </p>
 
-      {showInput ? (
-        <form
-          className="form"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void save()
-          }}
-        >
-          <label className="field">
-            <span>Токен</span>
-            <input
-              name="token"
-              type="password"
-              autoComplete="off"
-              spellCheck={false}
-              value={draft}
-              onChange={(event) => {
-                setDraft(event.target.value)
-                setNote('')
-              }}
-            />
-          </label>
-          <div className="row row--wrap">
-            <button type="submit" className="btn btn--primary" disabled={draft.trim() === ''}>
-              Сохранить
-            </button>
-            {editing && (
-              <button type="button" className="btn" onClick={() => setEditing(false)}>
-                Отмена
-              </button>
-            )}
-          </div>
-        </form>
-      ) : (
-        token && (
-          <div className="row row--wrap">
-            <button type="button" className="btn" onClick={() => void check()} disabled={checking || !apps || apps.length === 0}>
-              {checking ? 'Проверяю…' : 'Проверить доступ'}
-            </button>
-            <button type="button" className="btn" onClick={() => setEditing(true)}>
-              Заменить
-            </button>
-            <button type="button" className="btn btn--danger" onClick={() => void forget()}>
-              Забыть
-            </button>
-          </div>
-        )
-      )}
+      {token === null && <p className="muted">Токена нет: впиши его в «Синхронизации» выше или в любом приложении семьи.</p>}
 
       {token && apps?.length === 0 && (
         <p className="muted">Проверять пока нечего: приложения добавляются во вкладке «{FAMILY_TAB.name}».</p>
+      )}
+
+      {token && (
+        <div className="row row--wrap">
+          <button type="button" className="btn" onClick={() => void check()} disabled={checking || !apps || apps.length === 0}>
+            {checking ? 'Проверяю…' : 'Проверить доступ к приложениям'}
+          </button>
+        </div>
       )}
 
       {checks && (
@@ -180,9 +143,6 @@ function TokenSection() {
           ))}
         </ul>
       )}
-      {checks && <p className="muted">{RIGHTS_UNKNOWN}.</p>}
-
-      {note && <p className="muted">{note}</p>}
     </Fold>
   )
 }
@@ -249,10 +209,12 @@ function TitleSection() {
 }
 
 /**
- * Копия данных файлом — единственный путь перенести список приложений
- * и архив срезов на другое устройство (Р-02, Р-08). Токен в копию не входит.
+ * Копия данных файлом — запасной путь: список приложений, связки и архив
+ * срезов переезжают синхронизацией (Р-33). Тревога о копии — по настоящему
+ * состоянию синхронизации. Токен в копию не входит.
  */
 function DataCopy({ base }: { base: BaseCounts }) {
+  const sync = useSyncStatus()
   const input = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState('')
@@ -301,8 +263,8 @@ function DataCopy({ base }: { base: BaseCounts }) {
 
   // Пустой базе копировать нечего — и тревожить незачем.
   const empty = !base.counted || base.empty
-  const summary = lastSaved === undefined || empty ? undefined : backupSummary(lastSaved, NO_SYNC, today())
-  const facts = lastSaved === undefined || empty ? null : backupNote(lastSaved, NO_SYNC, today())
+  const summary = lastSaved === undefined || empty ? undefined : backupSummary(lastSaved, sync, today())
+  const facts = lastSaved === undefined || empty ? null : backupNote(lastSaved, sync, today())
 
   return (
     <Fold
@@ -312,8 +274,8 @@ function DataCopy({ base }: { base: BaseCounts }) {
       folded
     >
       <p className="muted">
-        Список приложений и увиденные срезы — одним файлом. Так они переезжают на другое устройство.
-        Токен в копию не входит.
+        Список приложений, связки и увиденные срезы — одним файлом. Запасной путь: с синхронизацией они
+        переезжают на другое устройство сами. Токен в копию не входит.
       </p>
       <div className="row row--wrap">
         <button type="button" className="btn" onClick={() => void save()} disabled={busy}>

@@ -44,12 +44,6 @@ export type ReadOptions = {
 
 export const NOT_GIVEN = 'срез не отдаёт'
 
-/**
- * Права fine-grained токена GitHub не сообщает: `canWrite` из `info()` —
- * права аккаунта на репозиторий, у владельца всегда `true` (Р-12).
- */
-export const RIGHTS_UNKNOWN = 'права токена GitHub не сообщает: «только чтение» выбирается при выпуске — Contents: Read-only'
-
 /** Тексты причин. Имя репозитория — в тексте: его вписал человек, и сверять — с ним. */
 export function failureText(failure: Exclude<Failure, 'other'>, dataRepo: string): string {
   switch (failure) {

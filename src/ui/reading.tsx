@@ -16,12 +16,12 @@ import type { App } from '../app/model.ts'
 import { brief, refreshApp, stored, type AppState } from '../reading/refresh.ts'
 import { lastSeenAll } from '../reading/seen.ts'
 import { useApps } from './useApps.ts'
-import { useToken } from './useToken.ts'
+import { reloadToken, useToken } from './useToken.ts'
 
 export type Reading = {
   /** Приложения в порядке человека; `null` — ещё читаются из базы. */
   apps: App[] | null
-  /** Токен чтения; `undefined` — ещё читается, `null` — не вписан. */
+  /** Токен «семья» (Р-33); `undefined` — ещё читается, `null` — не вписан. */
   token: string | null | undefined
   /** Состояние по id приложения. */
   states: ReadonlyMap<string, AppState>
@@ -97,10 +97,15 @@ export function foldSummary(state: AppState | undefined): ReactNode {
 
 /**
  * Чтение при открытии экрана (Р-05, Р-13). Новый токен или поправленный
- * список — тоже повод: `refresh` меняется вместе с ними.
+ * список — тоже повод: `refresh` меняется вместе с ними. Токен «семья»
+ * перечитывается при открытии: его могли заменить или забыть в соседнем
+ * приложении (Р-33).
  */
 export function useReadOnOpen(): Reading {
   const reading = useReading()
+  useEffect(() => {
+    void reloadToken()
+  }, [])
   useEffect(reading.refresh, [reading.refresh])
   return reading
 }
