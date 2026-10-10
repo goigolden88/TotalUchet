@@ -593,6 +593,30 @@ async function scenario(profile) {
   check('«Семья»: без summary.json — «срез не отдаёт»', has(states, 'срез не отдаёт'), line(states, 'срез не'))
   check('«Семья»: опечатка — «токен не видит репозиторий»', has(states, `токен не видит репозиторий ${TYPO}`), line(states, 'токен не видит'))
   check('«Семья»: токен в экран не попал', !has(states, TOKEN))
+  check('«Семья»: пустое имя на устройстве вписано при чтении — «совпадает» (Р-34)', has(states, 'имя на устройстве: совпадает'), line(states, 'имя на устройстве'))
+
+  // Занятое другим именем чтение не трогает; переписывает только кнопка (Р-34, Я-37).
+  await run(`new Promise((resolve, reject) => {
+    const open = indexedDB.open('family')
+    open.onerror = () => reject(open.error)
+    open.onsuccess = () => {
+      const base = open.result
+      const tx = base.transaction('repos', 'readwrite')
+      tx.objectStore('repos').put({ key: 'polka', value: 'someone/other-shelf' })
+      tx.oncomplete = () => { base.close(); resolve(true) }
+      tx.onerror = () => reject(tx.error)
+    }
+  })`)
+  await go('/')
+  await go('/family')
+  await waitFor(`document.body.innerText.includes('имя на устройстве другое')`)
+  await sleep(700)
+  const other = await screen()
+  check('«Семья»: занятое другим — чтение не тронуло, видно расхождение', has(other, 'имя на устройстве другое: someone/other-shelf'), line(other, 'другое'))
+  await act(`byText('button', 'Записать имя из списка').click();`)
+  await waitFor(`!document.body.innerText.includes('имя на устройстве другое')`)
+  const rewritten = await screen()
+  check('«Записать имя из списка» — имя из списка, «совпадает»', !has(rewritten, 'имя на устройстве другое') && has(rewritten, 'имя на устройстве: совпадает'), line(rewritten, 'имя на устройстве'))
 
   // Свёрнутые блоки приложений: у заголовка — итог.
   await act(`byText('button', 'Полка').click(); byText('button', 'Грядка').click(); byText('button', 'Опечатка в имени').click();`)

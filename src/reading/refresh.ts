@@ -18,6 +18,12 @@ export type AppState = {
   status: 'fresh' | 'none' | 'broken' | Failure
   /** Слова состояния; у свежего — пусто. */
   text: string
+  /**
+   * `dbName` приложения из его `meta.json` (Р-34) — только в памяти.
+   * `null` — файла или поля `app` нет; `undefined` — не узнали: не читали
+   * или чтение не дошло до дерева.
+   */
+  dbName?: string | null
 }
 
 /** Прочитать срез приложения и положить новый в архив. Не кидает. */
@@ -28,19 +34,25 @@ export async function refreshApp(
 ): Promise<AppState> {
   const now = options.now ?? (() => new Date().toISOString())
   const last = await lastSeen(app.id)
-  const result = await readSummary({ dataRepo: app.dataRepo, token, lastSha: last?.sha ?? null, fetch: options.fetch })
+  const result = await readSummary({
+    dataRepo: app.dataRepo,
+    token,
+    lastSha: last?.sha ?? null,
+    withApp: true,
+    fetch: options.fetch,
+  })
 
   switch (result.kind) {
     case 'new':
-      return { seen: await remember(app.id, result.sha, result.summary, now()), status: 'fresh', text: '' }
+      return { seen: await remember(app.id, result.sha, result.summary, now()), status: 'fresh', text: '', dbName: result.dbName }
     case 'same':
       // Тот же отпечаток бывает только у увиденного, но база могла опустеть между шагами.
       return last
-        ? { seen: await confirm(last, now()), status: 'fresh', text: '' }
-        : { seen: undefined, status: 'other', text: 'срез пропал из архива — нажми «Обновить»' }
+        ? { seen: await confirm(last, now()), status: 'fresh', text: '', dbName: result.dbName }
+        : { seen: undefined, status: 'other', text: 'срез пропал из архива — нажми «Обновить»', dbName: result.dbName }
     case 'none':
     case 'broken':
-      return { seen: last, status: result.kind, text: result.text }
+      return { seen: last, status: result.kind, text: result.text, dbName: result.dbName }
     case 'failed':
       return { seen: last, status: result.failure, text: result.text }
   }
