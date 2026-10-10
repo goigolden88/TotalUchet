@@ -2,9 +2,10 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { registerSW } from 'virtual:pwa-register'
 import { App } from './app.tsx'
-import { db } from './app/core.ts'
+import { db, sync } from './app/core.ts'
 import { listenInstall } from './shared/ui/install.ts'
 import { listenErrors } from './shared/ui/report.ts'
+import { dropReadToken } from './ui/useToken.ts'
 import { loadTitle } from './ui/useTitle.ts'
 // Каркас стилей ядра — первым, свои экраны и акцент — после.
 import './shared/styles.css'
@@ -40,6 +41,13 @@ void Promise.race([loadTitle().catch(() => {}), new Promise((done) => setTimeout
 // Постоянное хранилище: без него браузер вправе стереть базу при
 // нехватке места. Отказ — не ошибка, работать можно и так.
 void db.persist()
+
+// Своя синхронизация (Р-33): правка, возврат сети и вкладки, запуск.
+// Не настроена — проход молча ничего не делает.
+sync.startAutoSync()
+
+// Прежний токен чтения — с устройства: срезы читаются токеном «семья» (Р-33).
+void dropReadToken().catch(() => {})
 
 registerSW({
   immediate: true,

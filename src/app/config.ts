@@ -24,8 +24,8 @@ export const config: AppConfig<StoreRecord> = {
     seen: ['app'],
     bundles: [],
   },
-  // Синхронизации нет, но места выбраны сразу: она добавится без миграции
-  // (Р-02, Р-08).
+  // Места выбраны сразу, до синхронизации: она добавилась без миграции
+  // (Р-02, Р-08, Р-33).
   places: {
     apps: { split: 'none', path: 'apps.json' },
     seen: { split: 'month', dir: 'seen', dateOf: (record) => record.computedOn },

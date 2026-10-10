@@ -259,7 +259,7 @@ async function offline(on) {
 // ─── Подставной GitHub ─────────────────────────────────────────────────────
 
 /** Выдуманный токен: настоящий в прогон не попадает никогда (Р-01). */
-const TOKEN = 'fake-read-token'
+const TOKEN = 'fake-family-token'
 
 /** Выдуманные репозитории данных: срез есть, среза нет, опечатка — нет вовсе; второй срез — для связок. */
 const SHELF = 'someone/shelf-data'
@@ -424,7 +424,7 @@ async function scenario(profile) {
   check('«Сводка» открылась с названием по умолчанию', has(start, DEFAULT_TITLE), start.replace(/\s+/g, ' ').slice(0, 80))
   check('вкладки «Сводка» и «Семья»', has(start, 'Сводка') && has(start, 'Семья'))
   check('свежей установке «Что нового» не показано', !has(start, 'Что нового'))
-  check('без токена — «не настроено» со ссылкой в «Настройки»', has(start, 'нет токена чтения'), line(start, 'токен'))
+  check('без токена — «не настроено» со ссылкой в «Синхронизацию»', has(start, 'нет токена') && has(start, '«Синхронизация»') && !has(start, 'токена чтения'), line(start, 'токен'))
   check('заголовок вкладки — название', (await run('document.title')) === DEFAULT_TITLE)
 
   // ── «Семья» — вкладкой, по адресу.
@@ -486,8 +486,8 @@ async function scenario(profile) {
   await act(`byText('button', 'Сообщить об ошибке').click();`)
   await sleep(500)
   const report = await screen()
-  check('отчёт об ошибке открылся без синхронизации (Я-29, Р-16)', has(report, 'Открыть на GitHub') || has(report, 'Скопировать'))
-  check('в отчёте — «Синхронизация: выключена»', has(report, 'Синхронизация: выключена'))
+  check('отчёт об ошибке открылся', has(report, 'Открыть на GitHub') || has(report, 'Скопировать'))
+  check('в отчёте — «Синхронизация: выключена»: не настроена (Р-33)', has(report, 'Синхронизация: выключена'))
 
   // ── Этап 1: срезы с подставного GitHub. Запросы к api.github.com
   // до сети не доходят — отвечает подставной.
@@ -503,7 +503,7 @@ async function scenario(profile) {
   check('«Семья»: три приложения добавлены', has(listed, 'Полка') && has(listed, 'Грядка') && has(listed, 'Опечатка'))
   check('«Семья»: ссылка на репозиторий сведена к «владелец/имя»', has(listed, SHELF) && !has(listed, `github.com/${SHELF}`))
   check('«Семья»: у сайта слеш в конце', has(listed, 'https://example.org/shelf/'))
-  check('«Семья» без токена — «не настроено» со ссылкой в «Настройки»', has(listed, 'нет токена чтения'), line(listed, 'токен'))
+  check('«Семья» без токена — «не настроено» со ссылкой в «Синхронизацию»', has(listed, 'нет токена') && has(listed, '«Синхронизация»'), line(listed, 'токен'))
 
   // Поправить: форма — в блоке приложения; имя меняется, запись та же.
   await act(`[...fold('Опечатка').querySelectorAll('button')].find((el) => el.textContent === 'Поправить').click();`)
@@ -515,22 +515,34 @@ async function scenario(profile) {
   await sleep(500)
   check('«Семья»: приложение поправлено', has(await screen(), 'Опечатка в имени'))
 
-  // «Настройки»: токен и проверка доступа.
+  // «Настройки»: токен «семья» — в «Синхронизации» ядра; проверка доступа к приложениям (Р-33).
   await go('/settings')
   const tokenOpen = await screen()
-  check('без токена его раздел в «Настройках» открыт', has(tokenOpen, 'Fine-grained'), line(tokenOpen, 'токен'))
-  await act(`set(document.querySelector('input[name=token]'), ${JSON.stringify(TOKEN)});`)
-  await sleep(100)
-  await act(`[...document.querySelectorAll('form')].find((form) => form.querySelector('input[name=token]')).querySelector('button[type=submit]').click();`)
+  check('«Токена чтения» в «Настройках» нет', !has(tokenOpen, 'Токен чтения'), line(tokenOpen, 'токен'))
+  check('без токена — «Доступ к приложениям · нет токена»', /Доступ к приложениям\s*·\s*нет токена/i.test(tokenOpen), line(tokenOpen, 'Доступ'))
+  await act(`byText('button', 'Синхронизация').click();`)
+  await sleep(300)
+  await act(`[...document.querySelectorAll('label.check')].find((el) => el.innerText.includes('Синхронизировать через')).querySelector('input').click();`)
+  await sleep(500)
+  await act(`set(document.querySelector('input[placeholder="github_pat_…"]'), ${JSON.stringify(TOKEN)});`)
+  await sleep(300)
+  await act(`blur(document.querySelector('input[placeholder="github_pat_…"]'));`)
   await sleep(500)
   const tokenSaved = await screen()
-  check('токен вписан, на экране его нет', has(tokenSaved, 'Токен вписан') && !has(tokenSaved, TOKEN))
-  await act(`byText('button', 'Проверить доступ').click();`)
+  check('токен «семья» вписан в «Синхронизации», на экране его нет', has(tokenSaved, 'Сохранён') && !has(tokenSaved, TOKEN), line(tokenSaved, 'токен'))
+  check('у «Доступа к приложениям» больше нет «нет токена»', !/Доступ к приложениям\s*·\s*нет токена/i.test(tokenSaved), line(tokenSaved, 'Доступ'))
+  await act(`byText('button', 'Синхронизация').click();`)
+  await sleep(200)
+  await act(`byText('button', 'Доступ к приложениям').click();`)
+  await sleep(300)
+  await act(`byText('button', 'Проверить доступ к приложениям').click();`)
   await waitFor(`document.querySelector('.access')`)
   const access = await screen()
   check('проверка доступа: полное имя репозитория', has(access, `видит ${SHELF}`), line(access, SHELF))
-  check('проверка доступа: права токена не выдумываются (Р-12)', has(access, 'права токена GitHub не сообщает'))
+  check('проверка доступа: ни слова о токене только на чтение (Р-33)', !has(access, 'Read-only'), line(access, 'Read-only'))
   check('проверка доступа: опечатка — «токен не видит репозиторий»', has(access, `токен не видит репозиторий ${TYPO}`), line(access, TYPO))
+  await act(`byText('button', 'Доступ к приложениям').click();`)
+  await sleep(200)
 
   // «Сводка» читает срезы.
   await go('/')
