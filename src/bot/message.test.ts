@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest'
 import type { App } from '../app/model.ts'
-import { buildSummary, type NameList, type Summary } from '../shared/core/summary.ts'
+import { buildSummary, type Metric, type NameList, type Summary } from '../shared/core/summary.ts'
 import { shelfSummary, type Session } from '../shared/testing/shelf.ts'
-import { botMessage, escapeHtml, listProblemMessage, MESSAGE_LIMIT, READ_TOKEN_SECRET, type AppRead, type MessageInput } from './message.ts'
+import {
+  BAR_CHAR,
+  BAR_WIDTH,
+  barText,
+  botMessage,
+  escapeHtml,
+  listProblemMessage,
+  MESSAGE_LIMIT,
+  READ_TOKEN_SECRET,
+  type AppRead,
+  type MessageInput,
+} from './message.ts'
 
 /** Выдуманные приложения и срезы «Полки» ядра (Р-01). 28.09.2026 — понедельник. */
 const TODAY = '2026-09-28'
@@ -168,6 +179,55 @@ describe('токен бота (Р-29)', () => {
     const reads: AppRead[] = [{ app: SHELF, kind: 'read', summary: summaryOn('2026-09-27') }]
     expect(text(reads, { tokenExpires: '2026-10-28' })).toContain('Токен бота истекает 28.10 — выпусти новый вместе с токеном чтения приложения «Мой учёт».')
     expect(text(reads, { tokenExpires: '2026-10-29' })).not.toContain('истекает')
+  })
+})
+
+describe('полосы у строк серии (Р-35)', () => {
+  /** Выдуманные строки прошлой недели «Полки» (Р-01). */
+  function withRows(metrics: Metric[]): Summary {
+    const base = summaryOn('2026-09-27')
+    return { ...base, attention: [], periods: base.periods.map((period) => ({ ...period, metrics })) }
+  }
+  const minutes = (key: string, n: number): Metric => ({ key, label: key, value: { n, unit: 'minutes' }, basis: `основание ${key}` })
+  const bar = (length: number) => BAR_CHAR.repeat(length)
+
+  it('полоса — между строкой и основанием; наибольшая — во всю длину', () => {
+    const html = text([
+      {
+        app: SHELF,
+        kind: 'read',
+        summary: withRows([minutes('total', 7), minutes('pond.group.b', 30), minutes('pond.group.a', 120), minutes('pond.group.c', 0)]),
+      },
+    ])
+    expect(BAR_WIDTH).toBe(10)
+    expect(html).toContain(
+      '<blockquote expandable>total — 7 мин\n<i>основание total</i>\n' +
+        `pond.group.b — 30 мин\n${bar(3)}\n<i>основание pond.group.b</i>\n` +
+        `pond.group.a — 2 ч\n${bar(BAR_WIDTH)}\n<i>основание pond.group.a</i>\n` +
+        'pond.group.c — 0 мин\n<i>основание pond.group.c</i></blockquote>',
+    )
+  })
+
+  it('малое значение — хоть одно деление', () => {
+    expect(barText(0.01)).toBe(bar(1))
+    expect(barText(1)).toBe(bar(BAR_WIDTH))
+  })
+
+  it('не влезло — делится по строкам, полоса не отрывается от своей строки', () => {
+    const metrics = Array.from({ length: 40 }, (_, index) => ({ ...minutes(`pond.group.k${index}`, index + 1), basis: 'основание '.repeat(20) }))
+    const parts = botMessage(input([{ app: SHELF, kind: 'read', summary: withRows(metrics) }]))
+    for (const part of parts) expect(part.html.length).toBeLessThanOrEqual(MESSAGE_LIMIT)
+    const quotes = parts.flatMap((part) => [...part.html.matchAll(/<blockquote expandable>([\s\S]*?)<\/blockquote>/g)].map((match) => match[1] ?? ''))
+    expect(quotes.length).toBeGreaterThan(1)
+    for (const quoted of quotes) {
+      const lines = quoted.split('\n')
+      expect(lines.length % 3).toBe(0)
+      for (let index = 0; index < lines.length; index += 3) {
+        expect(lines[index]).toMatch(/^pond\.group\.k\d+ — /)
+        expect(lines[index + 1]).toMatch(new RegExp(`^${BAR_CHAR}+$`))
+      }
+    }
+    expect(parts.map((part) => part.html).join('\n')).toContain(`pond.group.k39 — 40 мин\n${bar(BAR_WIDTH)}\n`)
   })
 })
 

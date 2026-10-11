@@ -295,18 +295,27 @@ const FILE = summaryFile(SLICE)
 /**
  * Выдуманный «Пруд» — второй срез для связок (Р-17…Р-20): «Выходы к пруду»
  * у всех отрезков, «Улов» — только у месяцев. Без улова — строка пропала
- * из среза целиком, как у переименованной группы.
+ * из среза целиком, как у переименованной группы. Серия минут у пруда —
+ * для полос (Р-35): утро вдвое длиннее вечера, тишина — ноль.
  */
 function pondFile(withFish) {
   const periods = summaryPeriods(DAY).map((period, index) => {
     const visits = { key: 'pond.visits', label: 'Выходы к пруду', value: { n: period.grain === 'week' ? 2 : 6, unit: 'count' }, basis: 'по записям прогулок' }
     const fish = { key: 'pond.fish', label: 'Улов', value: { n: 3, unit: 'count' }, basis: 'по записям улова' }
-    const metrics = period.grain === 'month' && withFish ? [visits, fish] : [visits]
+    const series = POND_SERIES.map(([key, label, n]) => ({ key, label, value: { n, unit: 'minutes' }, basis: 'по записям прогулок' }))
+    const metrics = period.grain === 'month' && withFish ? [visits, fish, ...series] : [visits, ...series]
     return { ...period, through: index % 2 === 1 ? DAY : null, metrics }
   })
   const file = summaryFile(buildSummary({ periods, attention: [] }, {}, DAY))
   return { [file.path]: file.content, 'meta.json': '{"app":"pond","schemaVersion":1}\n' }
 }
+
+/** Выдуманная серия «Пруда» (Р-01, Р-35): ключ, подпись, минуты. */
+const POND_SERIES = [
+  ['pond.time.morning', 'Утром у пруда', 120],
+  ['pond.time.evening', 'Вечером у пруда', 60],
+  ['pond.time.night', 'Ночью у пруда', 0],
+]
 
 /** Репозиторий «Пруда» — файлы меняются по ходу прогона. */
 const pond = { files: pondFile(true) }
@@ -641,6 +650,7 @@ async function scenario(profile) {
   await go('/')
   await waitFor(`!document.querySelector('.refresh button').disabled`)
 
+  await bars()
   await bundles()
   await botList()
 
@@ -666,6 +676,45 @@ async function scenario(profile) {
     `работник ${controlled ? 'управляет' : 'не управляет'} страницей`,
   )
   await offline(false)
+}
+
+/**
+ * Полосы у строк серии (Р-35): под каждой строкой серии «Пруда» — полоса
+ * в масштабе наибольшей; ноль и строки вне серий — без полосы; числа
+ * и основания на месте. Блок «Полосы» сворачивается и это помнит.
+ */
+async function bars() {
+  for (const choice of CHOICES) {
+    await act(`byText('button', ${JSON.stringify(choice.label)}).click();`)
+    await sleep(200)
+    const rows = await act(`
+      return [...fold('Пруд').querySelectorAll('.metric')].map((el) =>
+        el.querySelector('.metric__row span').textContent + '=' + (el.querySelector('.bar__fill')?.style.width ?? '-'));
+    `)
+    // На месяце «Выходы» и «Улов» — тоже серия: общее начало ключа, одна единица (Р-35, «Цена»).
+    const head = choice.id.endsWith('Month') ? 'Выходы к пруду=100%|Улов=50%' : 'Выходы к пруду=-'
+    const want = `${head}|Утром у пруда=100%|Вечером у пруда=50%|Ночью у пруда=-`
+    const got = (rows ?? []).join('|')
+    check(`отрезок «${choice.label}»: полосы у строк серии, наибольшая — во всю длину, ноль и вне серии — без полосы`, got === want, got)
+  }
+  // На неделе блок «Полосы» у «Пруда» один — его и сворачиваем.
+  await act(`byText('button', 'Эта неделя').click();`)
+  await sleep(200)
+  const inside = await act(`return fold('Пруд').innerText;`)
+  check('полосы: числа и основания на месте; блок «Полосы» с итогом', has(inside, '2 ч') && has(inside, '1 ч') && has(inside, 'по записям прогулок') && /Полосы\s*·\s*3 строки/i.test(inside.replace(/ /g, ' ')), line(inside, 'Полосы'))
+
+  await act(`byText('button', 'Полосы').click();`)
+  await sleep(500)
+  await send('Page.reload')
+  await waitFor(`document.querySelector('.refresh button') && !document.querySelector('.refresh button').disabled && document.body.innerText.includes('Выходы к пруду')`)
+  const folded = await act(`return fold('Пруд').innerText;`)
+  check('блок «Полосы» свёрнут — и после перезагрузки', !has(folded, 'Утром у пруда') && /Полосы\s*·\s*3 строки/i.test(folded.replace(/ /g, ' ')), line(folded, 'Полосы'))
+
+  await act(`byText('button', 'Полосы').click();`)
+  await sleep(500)
+  await send('Page.reload')
+  await waitFor(`document.querySelector('.refresh button') && !document.querySelector('.refresh button').disabled && document.body.innerText.includes('Выходы к пруду')`)
+  check('блок «Полосы» развёрнут — и после перезагрузки', has(await act(`return fold('Пруд').innerText;`), 'Утром у пруда'))
 }
 
 /** Отметить строку в форме связки — по подписи. */
