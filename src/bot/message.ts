@@ -6,7 +6,7 @@
  * о данных нет. Блоки — сворачиваемой цитатой Телеграма
  * (`blockquote expandable`), аналогом `Fold`: снаружи то, что у свёрнутого
  * на экране, внутри — строки с основаниями. Списки названий — снаружи
- * цитаты (Р-31).
+ * цитаты (Р-31). У строки серии — полоса символами под строкой (Р-35).
  *
  * Разметка — HTML Bot API. Всё, что пришло из среза или списка, экранируется.
  * Сообщение режется на части по лимиту Телеграма целыми блоками; блок
@@ -30,6 +30,12 @@ export const MESSAGE_LIMIT = 4096
  * `WARN_DAYS` ядра, — тот лежит в файле интерфейса, а Node `.tsx` не запускает (Р-29).
  */
 export const WARN_DAYS = 30
+
+/** Делений у наибольшей полосы серии (Р-35). */
+export const BAR_WIDTH = 10
+
+/** Деление полосы в сообщении (Р-35). */
+export const BAR_CHAR = '▇'
 
 /** Секрет с токеном чтения бота в приватном репозитории (Р-25). */
 export const READ_TOKEN_SECRET = 'READ_TOKEN'
@@ -111,8 +117,20 @@ function callsSection(reads: readonly AppRead[]): string | null {
   return `<b>Зовут</b>: ${names}\n${quote(lines)}`
 }
 
+/**
+ * Строка в цитате: подпись и значение, полоса строки серии, основание.
+ * Полоса — в тех же строках, что её подпись: при делении по лимиту не отрывается (Р-35).
+ */
 function rowLines(row: BlockRow): string[] {
-  return [`${escapeHtml(row.label)} — ${escapeHtml(row.value.text)}`, `<i>${escapeHtml(row.basis)}</i>`]
+  const lines = [`${escapeHtml(row.label)} — ${escapeHtml(row.value.text)}`]
+  if (row.bar !== null) lines.push(barText(row.bar))
+  lines.push(`<i>${escapeHtml(row.basis)}</i>`)
+  return lines
+}
+
+/** Полоса символами: наибольшая в серии — `BAR_WIDTH`, малая — хоть одно деление (Р-35). */
+export function barText(bar: number): string {
+  return BAR_CHAR.repeat(Math.max(1, Math.round(bar * BAR_WIDTH)))
 }
 
 /** Список названий (Р-31): подпись жирным, названия через запятую, основание курсивом. */

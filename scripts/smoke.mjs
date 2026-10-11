@@ -295,18 +295,30 @@ const FILE = summaryFile(SLICE)
 /**
  * Выдуманный «Пруд» — второй срез для связок (Р-17…Р-20): «Выходы к пруду»
  * у всех отрезков, «Улов» — только у месяцев. Без улова — строка пропала
- * из среза целиком, как у переименованной группы.
+ * из среза целиком, как у переименованной группы. Минуты у пруда — в форме
+ * ключей «Делу Время», для полос (Р-35): итоги из двух частей ключа между
+ * строками групп; утро вдвое длиннее вечера, ночь — ноль.
  */
 function pondFile(withFish) {
   const periods = summaryPeriods(DAY).map((period, index) => {
     const visits = { key: 'pond.visits', label: 'Выходы к пруду', value: { n: period.grain === 'week' ? 2 : 6, unit: 'count' }, basis: 'по записям прогулок' }
     const fish = { key: 'pond.fish', label: 'Улов', value: { n: 3, unit: 'count' }, basis: 'по записям улова' }
-    const metrics = period.grain === 'month' && withFish ? [visits, fish] : [visits]
+    const time = POND_TIME.map(([key, label, n]) => ({ key, label, value: { n, unit: 'minutes' }, basis: 'по записям прогулок' }))
+    const metrics = period.grain === 'month' && withFish ? [visits, fish, ...time] : [visits, ...time]
     return { ...period, through: index % 2 === 1 ? DAY : null, metrics }
   })
   const file = summaryFile(buildSummary({ periods, attention: [] }, {}, DAY))
   return { [file.path]: file.content, 'meta.json': '{"app":"pond","schemaVersion":1}\n' }
 }
+
+/** Выдуманные минуты «Пруда» (Р-01, Р-35): ключ, подпись, минуты. */
+const POND_TIME = [
+  ['pond.total', 'Всего у пруда', 180],
+  ['pond.group.morning', 'Утром у пруда', 120],
+  ['pond.ungrouped', 'Без группы у пруда', 60],
+  ['pond.group.evening', 'Вечером у пруда', 60],
+  ['pond.group.night', 'Ночью у пруда', 0],
+]
 
 /** Репозиторий «Пруда» — файлы меняются по ходу прогона. */
 const pond = { files: pondFile(true) }
@@ -641,6 +653,7 @@ async function scenario(profile) {
   await go('/')
   await waitFor(`!document.querySelector('.refresh button').disabled`)
 
+  await bars()
   await bundles()
   await botList()
 
@@ -666,6 +679,33 @@ async function scenario(profile) {
     `работник ${controlled ? 'управляет' : 'не управляет'} страницей`,
   )
   await offline(false)
+}
+
+/**
+ * Полосы у строк серии (Р-35): под строками групп «Пруда» — полоса в масштабе
+ * наибольшей, на месте строки; итоги из двух частей ключа, счёты и ноль — без
+ * полосы; числа и основания на месте, отдельных блоков нет.
+ */
+async function bars() {
+  for (const choice of CHOICES) {
+    await act(`byText('button', ${JSON.stringify(choice.label)}).click();`)
+    await sleep(200)
+    const rows = await act(`
+      return [...fold('Пруд').querySelectorAll('.metric')].map((el) =>
+        el.querySelector('.metric__row span').textContent + '=' + (el.querySelector('.bar__fill')?.style.width ?? '-'));
+    `)
+    const head = choice.id.endsWith('Month') ? 'Выходы к пруду=-|Улов=-' : 'Выходы к пруду=-'
+    const want = `${head}|Всего у пруда=-|Утром у пруда=100%|Без группы у пруда=-|Вечером у пруда=50%|Ночью у пруда=-`
+    const got = (rows ?? []).join('|')
+    check(`отрезок «${choice.label}»: полосы только у строк групп, наибольшая — во всю длину; итоги, счёты и ноль — без полосы`, got === want, got)
+  }
+  const inside = await act(`return fold('Пруд').innerText;`)
+  const folds = await act(`return fold('Пруд').querySelectorAll('.fold__btn').length;`)
+  check(
+    'полосы: числа и основания на месте, отдельных блоков нет',
+    has(inside, '3 ч') && has(inside, '2 ч') && has(inside, '1 ч') && has(inside, 'по записям прогулок') && folds === 1,
+    `блоков: ${folds}`,
+  )
 }
 
 /** Отметить строку в форме связки — по подписи. */
