@@ -193,6 +193,19 @@
   text-align: right;
 }
 
+/* Полоса строки серии: длина в масштабе серии, один цвет у всех (Р-35, Я-15). */
+.bar {
+  height: 6px;
+  margin: 4px 0 2px;
+}
+
+.bar__fill {
+  min-width: 2px;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--chart);
+}
+
 /* Названия списка — столбиком, теснее строк (Р-31). */
 .names {
   margin: 4px 0;

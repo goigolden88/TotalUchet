@@ -24,7 +24,8 @@ import { FAMILY_TAB } from './tabs.ts'
 /**
  * «Сводка» — главный экран (Р-04, Р-06). Сверху «Зовут», ниже — отрезок
  * переключателем, связки (Р-19) и блок каждого приложения. Показывает, а не досчитывает
- * (Я-15): строки — в порядке хозяина, значение — одно за раз.
+ * (Я-15): строки — в порядке хозяина, значение — одно за раз. У строки серии —
+ * полоса под ней, на её месте (Р-35).
  *
  * «Зовут» и блоки приложений сворачиваются; у свёрнутого — итог рядом
  * с заголовком.
@@ -168,6 +169,11 @@ function AppBlock({ app, state, screen }: { app: App; state: AppState | undefine
                     <span>{row.label}</span>
                     <span className={row.value.muted ? 'metric__value muted' : 'metric__value'}>{row.value.text}</span>
                   </div>
+                  {row.bar !== null && (
+                    <div className="bar" aria-hidden="true">
+                      <div className="bar__fill" style={{ width: `${row.bar * 100}%` }} />
+                    </div>
+                  )}
                   <div className="basis">{row.basis}</div>
                 </li>
               ))}
