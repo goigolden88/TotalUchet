@@ -81,9 +81,10 @@ function failed(failure: Failure, dataRepo: string, text?: string): ReadResult {
 
 /**
  * Ошибка → причина. `onInfo` — ошибка на проверке доступа: там 404 значит
- * «не видит», а после неё 404 — уже странность, а не опечатка.
+ * «не видит», а после неё 404 — уже странность, а не опечатка. Ею же
+ * объясняет причины «Копия всей семьи» (`copy.ts`, Р-36).
  */
-function explain(error: unknown, dataRepo: string, offline: boolean, onInfo: boolean): ReadResult {
+export function explain(error: unknown, dataRepo: string, offline: boolean, onInfo: boolean): ReadResult {
   // Обрыв связи ловится на самом fetch (`guard`): статус 0 у клиента ядра бывает
   // и у ошибок без сервера — «дерево не поместилось», чужая кодировка.
   if (offline) return failed('offline', dataRepo)
@@ -101,7 +102,7 @@ function explain(error: unknown, dataRepo: string, offline: boolean, onInfo: boo
  * `fetch`, который помнит обрыв связи. Статус 0 у клиента ядра бывает
  * и у ошибок без сервера, поэтому «нет связи» узнаётся здесь.
  */
-function guard(fetch: typeof globalThis.fetch): { fetch: typeof globalThis.fetch; offline: () => boolean } {
+export function guard(fetch: typeof globalThis.fetch): { fetch: typeof globalThis.fetch; offline: () => boolean } {
   let offline = false
   return {
     fetch: async (input, init) => {
