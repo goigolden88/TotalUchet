@@ -31,6 +31,7 @@ import { DEFAULT_TITLE } from '../src/ui/title.ts'
 import { fakeGitHub } from '../src/reading/fakeGitHub.ts'
 // Список для бота разбирается той же функцией, что у самого бота (Р-28).
 import { LIST_FILE, parseBotList } from '../src/bot/list.ts'
+import { copyFileName } from '../src/reading/copy.ts'
 import { addDays, addMonths, monthOf, today } from '../src/shared/core/dates.ts'
 import { buildSummary, summaryFile, summaryPeriods } from '../src/shared/core/summary.ts'
 import { shelfSummary } from '../src/shared/testing/shelf.ts'
@@ -414,6 +415,60 @@ async function botList() {
   await waitFor(`!document.querySelector('.refresh button').disabled`)
 }
 
+/**
+ * «Настройки» → «Копия всей семьи» (Р-36): все файлы репозиториев данных
+ * одним файлом; нечитаемое приложение — с причиной, копию не валит; не
+ * прочитался ни один — файла нет. Кнопка названа как раздел — ищется по `.btn`.
+ */
+async function familyCopy() {
+  const name = copyFileName(DAY)
+  const file = join(profile, name)
+  const press = `[...document.querySelectorAll('button.btn')].find((el) => el.textContent.trim() === 'Копия всей семьи').click();`
+  await go('/settings')
+  await act(`byText('button', 'Копия всей семьи').click();`)
+  await sleep(300)
+  await act(press)
+  await sleep(1500)
+  const shown = await screen()
+  check('«Копия всей семьи»: файл сохранён', has(shown, 'Файл сохранён') && existsSync(file), name)
+  check(
+    '«Копия всей семьи»: у каждого — сколько файлов или почему не прочитано',
+    has(shown, 'Полка — в копии: 2 файла') && has(shown, 'Грядка — в копии: 1 файл') && has(shown, 'Опечатка в имени — не прочитано: токен не видит репозиторий'),
+    line(shown, 'не прочитано'),
+  )
+  const text = existsSync(file) ? readFileSync(file, 'utf8') : ''
+  const copy = text ? JSON.parse(text) : null
+  check(
+    '«Копия всей семьи»: в файле — имя, репозиторий, коммит и файлы путями и текстом; у опечатки — причина',
+    copy?.format === 1 &&
+      copy.takenOn === DAY &&
+      copy.apps.map((app) => app.name).join(',') === 'Полка,Грядка,Опечатка в имени' &&
+      copy.apps[0].dataRepo === SHELF &&
+      typeof copy.apps[0].commit === 'string' &&
+      copy.apps[0].files.some((entry) => entry.path === FILE.path && entry.text === FILE.content) &&
+      copy.apps[2].failed?.includes(TYPO),
+    copy ? copy.apps.map((app) => `${app.name}:${app.files?.length ?? app.failed}`).join(' | ') : 'файла нет',
+  )
+  check('«Копия всей семьи»: токена в файле нет', text !== '' && !text.includes(TOKEN))
+
+  // Ни один не прочитался — файла нет, у каждого причина.
+  rmSync(file, { force: true })
+  githubDown = true
+  await act(press)
+  await sleep(1500)
+  githubDown = false
+  const down = await screen()
+  check(
+    '«Копия всей семьи»: без связи — файла нет, у каждого «нет связи»',
+    !existsSync(file) && has(down, 'файл не сохранён') && has(down, 'Полка — не прочитано: нет связи'),
+    line(down, 'не сохранён'),
+  )
+  await act(`byText('button', 'Копия всей семьи').click();`)
+  await sleep(200)
+  await go('/')
+  await waitFor(`!document.querySelector('.refresh button').disabled`)
+}
+
 // ─── Сценарий ──────────────────────────────────────────────────────────────
 
 /**
@@ -679,6 +734,7 @@ async function scenario(profile) {
   await bars()
   await bundles()
   await botList()
+  await familyCopy()
 
   // Без связи с GitHub — последний увиденный с датой прочтения.
   githubDown = true

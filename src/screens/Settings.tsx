@@ -13,6 +13,7 @@ import { SyncSettings } from '../shared/ui/SyncSettings.tsx'
 import { useSyncStatus } from '../shared/ui/useSync.ts'
 import type { App } from '../app/model.ts'
 import { botList, LIST_FILE, listText } from '../bot/list.ts'
+import { anyCopied, copyFamily, copyFileName, copyLine, type AppCopy } from '../reading/copy.ts'
 import { checkAccess, type Access } from '../reading/read.ts'
 import { DEFAULT_TITLE, MAX_TITLE } from '../ui/title.ts'
 import { useApps } from '../ui/useApps.ts'
@@ -52,6 +53,7 @@ export function Settings() {
       <AccessSection />
       <TitleSection />
       <DataCopy base={base} />
+      <FamilyCopySection />
       <BotSection />
       <About base={base} />
     </>
@@ -339,6 +341,100 @@ function DataCopy({ base }: { base: BaseCounts }) {
 
       {note && <p className="muted">{note}</p>}
       {error && <p className="error">{error}</p>}
+    </Fold>
+  )
+}
+
+/** Как вернуть данные из копии всей семьи — раздел документов проекта (Р-36). */
+const RESTORE_GUIDE =
+  'https://github.com/goigolden88/TotalUchet/blob/main/docs/06-Процесс.md#аварийное-вернуть-данные-из-копии-всей-семьи'
+
+/**
+ * Копия всей семьи (Р-36): все файлы репозиториев данных из «Семьи» одним
+ * файлом, токеном «семья». Запасной путь на случай потери аккаунта GitHub;
+ * восстанавливают руками, по документам, — кнопки нет. Нечитаемое приложение
+ * копию не валит: оно в файле и на экране с причиной. Токен в файл не входит.
+ */
+function FamilyCopySection() {
+  const token = useToken()
+  const apps = useApps()
+  const [busy, setBusy] = useState(false)
+  const [copied, setCopied] = useState<AppCopy[] | null>(null)
+  const [note, setNote] = useState('')
+  const [error, setError] = useState('')
+
+  async function save() {
+    if (!token || !apps) return
+    setBusy(true)
+    setCopied(null)
+    setNote('')
+    setError('')
+    try {
+      const copy = await copyFamily({ apps, token, day: today() })
+      setCopied(copy.apps)
+      if (anyCopied(copy)) {
+        download(copyFileName(copy.takenOn), JSON.stringify(copy, null, 2))
+        setNote('Файл сохранён')
+      } else {
+        setError('Ни один репозиторий не прочитан — файл не сохранён')
+      }
+    } catch (failure) {
+      setError(describe(failure))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Fold
+      id="settings:family-copy"
+      title="Копия всей семьи"
+      summary={token === null ? <span className="error">нет токена</span> : undefined}
+      folded
+    >
+      <p className="muted">
+        Всё, что приложения из «{FAMILY_TAB.name}» уже синхронизировали в свои репозитории данных, — одним файлом,
+        токеном «семья». Запасной путь на случай потери аккаунта GitHub: историю данных GitHub и так хранит. Токена
+        в файле нет.
+      </p>
+      <p className="muted">
+        Приложения без синхронизации в «{FAMILY_TAB.name}» не входят и в копию не попадают — у них своя копия файлом,
+        в их собственных настройках.
+      </p>
+
+      {token === null && <p className="muted">Токена нет: впиши его в «Синхронизации» выше или в любом приложении семьи.</p>}
+
+      {token && apps?.length === 0 && (
+        <p className="muted">Копировать пока нечего: приложения добавляются во вкладке «{FAMILY_TAB.name}».</p>
+      )}
+
+      {token && (
+        <div className="row row--wrap">
+          <button type="button" className="btn" onClick={() => void save()} disabled={busy || !apps || apps.length === 0}>
+            {busy ? 'Читаю репозитории…' : 'Копия всей семьи'}
+          </button>
+        </div>
+      )}
+
+      {copied && (
+        <ul className="plain access">
+          {copied.map((app, index) => (
+            <li key={index}>
+              <strong>{app.name}</strong>
+              <span className={'failed' in app ? 'error' : 'muted'}> — {copyLine(app)}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {note && <p className="muted">{note}</p>}
+      {error && <p className="error">{error}</p>}
+
+      <p className="muted">
+        <a href={RESTORE_GUIDE} target="_blank" rel="noopener">
+          Как вернуть данные из такой копии — по шагам
+        </a>
+      </p>
     </Fold>
   )
 }
