@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { anyCopied, COPY_FORMAT, copyFamily, copyFileName, copyLine, type AppCopy } from './copy.ts'
+import {
+  anyCopied,
+  COPY_FORMAT,
+  copyFamily,
+  copyFileName,
+  copyLine,
+  OWN_NOT_SET,
+  OWN_UNKNOWN,
+  ownRepo,
+  type AppCopy,
+  type OwnRepo,
+} from './copy.ts'
 import { fakeGitHub } from './fakeGitHub.ts'
 import { failureText } from './read.ts'
 
@@ -15,8 +26,11 @@ const SHELF_FILES = {
 }
 const POND_FILES = { 'meta.json': '{"app":"prud"}\n', 'fish.json': '[]\n' }
 
-function copy(github: ReturnType<typeof fakeGitHub>, apps = [SHELF, POND]) {
-  return copyFamily({ apps, token: TOKEN, day: DAY, fetch: github.fetch })
+/** Свой репозиторий в тестах до своего раздела — уже в «Семье»: второй раз не входит. */
+const LISTED: OwnRepo = { name: 'Учёт', dataRepo: SHELF.dataRepo }
+
+function copy(github: ReturnType<typeof fakeGitHub>, apps = [SHELF, POND], own: OwnRepo = LISTED) {
+  return copyFamily({ apps, own, token: TOKEN, day: DAY, fetch: github.fetch })
 }
 
 describe('копия всей семьи (Р-36)', () => {
@@ -66,8 +80,11 @@ describe('копия всей семьи (Р-36)', () => {
 
   it('кривое имя репозитория — причина без запросов', async () => {
     const github = fakeGitHub({})
-    const result = await copy(github, [{ name: 'Полка', dataRepo: 'не репозиторий' }])
-    expect(result.apps).toEqual([{ name: 'Полка', dataRepo: 'не репозиторий', failed: failureText('badRepo', 'не репозиторий') }])
+    const result = await copy(github, [{ name: 'Полка', dataRepo: 'не репозиторий' }], { name: 'Учёт', failed: OWN_NOT_SET })
+    expect(result.apps).toEqual([
+      { name: 'Полка', dataRepo: 'не репозиторий', failed: failureText('badRepo', 'не репозиторий') },
+      { name: 'Учёт', dataRepo: '', failed: OWN_NOT_SET },
+    ])
     expect(github.paths).toEqual([])
   })
 
@@ -82,6 +99,7 @@ describe('копия всей семьи (Р-36)', () => {
     const github = fakeGitHub({ [SHELF.dataRepo]: { files: SHELF_FILES } })
     await copyFamily({
       apps: [SHELF],
+      own: LISTED,
       token: TOKEN,
       day: DAY,
       fetch: (input, init) => {
@@ -105,5 +123,57 @@ describe('копия всей семьи (Р-36)', () => {
     expect(copyFileName(DAY)).toBe('family-2026-10-21.json')
     const one: AppCopy = { ...SHELF, commit: 'c', files: [{ path: 'a.json', text: '' }] }
     expect(copyLine(one)).toBe('в копии: 1 файл')
+  })
+})
+
+describe('свой репозиторий данных в копии (Р-37)', () => {
+  const OWN = { name: 'Учёт', dataRepo: 'someone/uchet-data' }
+  const OWN_FILES = { 'apps.json': '[{"name":"Полка"}]\n', 'seen.json': '[]\n' }
+
+  it('не в «Семье» — последним, с теми же полями, что у остальных', async () => {
+    const github = fakeGitHub({ [SHELF.dataRepo]: { files: SHELF_FILES }, [OWN.dataRepo]: { files: OWN_FILES } })
+    const result = await copy(github, [SHELF], OWN)
+    expect(result.apps.map((app) => app.name)).toEqual([SHELF.name, OWN.name])
+    expect(result.apps[1]).toEqual({
+      ...OWN,
+      commit: expect.any(String),
+      files: Object.entries(OWN_FILES).map(([path, text]) => ({ path, text })),
+    })
+  })
+
+  it('уже в «Семье» — один раз, под именем из списка; регистр и ссылка — тот же репозиторий', async () => {
+    const github = fakeGitHub({ [SHELF.dataRepo]: { files: SHELF_FILES } })
+    const result = await copy(github, [SHELF], { name: 'Учёт', dataRepo: 'https://github.com/Someone/Shelf-Data' })
+    expect(result.apps.map((app) => app.name)).toEqual([SHELF.name])
+  })
+
+  it('не прочитался — в файле с причиной словами чтения, остальные целы', async () => {
+    const github = fakeGitHub({ [SHELF.dataRepo]: { files: SHELF_FILES } })
+    const result = await copy(github, [SHELF], OWN)
+    expect(result.apps[0]).toMatchObject({ ...SHELF, files: expect.any(Array) })
+    expect(result.apps[1]).toEqual({ ...OWN, failed: failureText('noAccess', OWN.dataRepo) })
+    expect(anyCopied(result)).toBe(true)
+  })
+
+  it('не вписан — в файле с причиной и пустым репозиторием, без запросов за ним', async () => {
+    const github = fakeGitHub({ [SHELF.dataRepo]: { files: SHELF_FILES } })
+    const result = await copy(github, [SHELF], ownRepo('Учёт', {}, 'uchet'))
+    expect(result.apps[1]).toEqual({ name: 'Учёт', dataRepo: '', failed: OWN_NOT_SET })
+    expect(copyLine(result.apps[1] as AppCopy)).toBe(`не прочитано: ${OWN_NOT_SET}`)
+    expect(github.paths.every((path) => path.includes(SHELF.dataRepo))).toBe(true)
+  })
+
+  it('имя — из общей базы по своему dbName; пустое — не вписано; база не открылась — своя причина', () => {
+    expect(ownRepo('Учёт', { uchet: ' someone/uchet-data ', polka: SHELF.dataRepo }, 'uchet')).toEqual(OWN)
+    expect(ownRepo('Учёт', { polka: SHELF.dataRepo }, 'uchet')).toEqual({ name: 'Учёт', failed: OWN_NOT_SET })
+    expect(ownRepo('Учёт', { uchet: '  ' }, 'uchet')).toEqual({ name: 'Учёт', failed: OWN_NOT_SET })
+    expect(ownRepo('Учёт', null, 'uchet')).toEqual({ name: 'Учёт', failed: OWN_UNKNOWN })
+  })
+
+  it('токена в файле нет и у своего', async () => {
+    const github = fakeGitHub({ [OWN.dataRepo]: { files: OWN_FILES } })
+    const result = await copy(github, [], OWN)
+    expect(result.apps).toHaveLength(1)
+    expect(JSON.stringify(result)).not.toContain(TOKEN)
   })
 })

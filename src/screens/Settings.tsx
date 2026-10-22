@@ -4,6 +4,7 @@ import { db } from '../app/core.ts'
 import { SCHEMA_VERSION, type Store } from '../app/model.ts'
 import { CHANGES } from '../changes.ts'
 import { today } from '../shared/core/dates.ts'
+import { family } from '../shared/core/db.ts'
 import { ChangeList } from '../shared/screens/WhatsNew.tsx'
 import { backupNote, backupSummary } from '../shared/ui/backup.ts'
 import { Fold } from '../shared/ui/Fold.tsx'
@@ -13,7 +14,7 @@ import { SyncSettings } from '../shared/ui/SyncSettings.tsx'
 import { useSyncStatus } from '../shared/ui/useSync.ts'
 import type { App } from '../app/model.ts'
 import { botList, LIST_FILE, listText } from '../bot/list.ts'
-import { anyCopied, copyFamily, copyFileName, copyLine, type AppCopy } from '../reading/copy.ts'
+import { anyCopied, copyFamily, copyFileName, copyLine, ownRepo, type AppCopy } from '../reading/copy.ts'
 import { checkAccess, type Access } from '../reading/read.ts'
 import { DEFAULT_TITLE, MAX_TITLE } from '../ui/title.ts'
 import { useApps } from '../ui/useApps.ts'
@@ -350,14 +351,16 @@ const RESTORE_GUIDE =
   'https://github.com/goigolden88/TotalUchet/blob/main/docs/06-Процесс.md#аварийное-вернуть-данные-из-копии-всей-семьи'
 
 /**
- * Копия всей семьи (Р-36): все файлы репозиториев данных из «Семьи» одним
- * файлом, токеном «семья». Запасной путь на случай потери аккаунта GitHub;
+ * Копия всей семьи (Р-36): все файлы репозиториев данных из «Семьи» и своего
+ * (Р-37) одним файлом, токеном «семья». Свой — по имени из общей базы
+ * устройства, как у синхронизации. Запасной путь на случай потери аккаунта GitHub;
  * восстанавливают руками, по документам, — кнопки нет. Нечитаемое приложение
  * копию не валит: оно в файле и на экране с причиной. Токен в файл не входит.
  */
 function FamilyCopySection() {
   const token = useToken()
   const apps = useApps()
+  const title = useTitle()
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState<AppCopy[] | null>(null)
   const [note, setNote] = useState('')
@@ -370,7 +373,8 @@ function FamilyCopySection() {
     setNote('')
     setError('')
     try {
-      const copy = await copyFamily({ apps, token, day: today() })
+      const own = ownRepo(title, await family.read().then(({ repos }) => repos, () => null), config.dbName)
+      const copy = await copyFamily({ apps, own, token, day: today() })
       setCopied(copy.apps)
       if (anyCopied(copy)) {
         download(copyFileName(copy.takenOn), JSON.stringify(copy, null, 2))
@@ -393,8 +397,8 @@ function FamilyCopySection() {
       folded
     >
       <p className="muted">
-        Всё, что приложения из «{FAMILY_TAB.name}» уже синхронизировали в свои репозитории данных, — одним файлом,
-        токеном «семья». Запасной путь на случай потери аккаунта GitHub: историю данных GitHub и так хранит. Токена
+        Всё, что приложения из «{FAMILY_TAB.name}» уже синхронизировали в свои репозитории данных, и репозиторий
+        данных самого «{title}» — одним файлом, токеном «семья». Запасной путь на случай потери аккаунта GitHub: историю данных GitHub и так хранит. Токена
         в файле нет.
       </p>
       <p className="muted">
@@ -411,7 +415,7 @@ function FamilyCopySection() {
       {token && (
         <div className="row row--wrap">
           <button type="button" className="btn" onClick={() => void save()} disabled={busy || !apps || apps.length === 0}>
-            {busy ? 'Читаю репозитории…' : 'Копия всей семьи'}
+            {busy ? 'Читаю репозитории…' : 'Скачать копию'}
           </button>
         </div>
       )}
