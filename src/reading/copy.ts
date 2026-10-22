@@ -1,8 +1,9 @@
 /**
  * «Копия всей семьи» (Р-36) — без React и без базы.
  *
- * Один файл со всеми файлами репозиториев данных из «Семьи», токеном «семья»:
- * запасной путь на случай потери аккаунта GitHub. Путь тот же, что у чтения
+ * Один файл со всеми файлами репозиториев данных из «Семьи» и своего
+ * репозитория данных «Учёта» (Р-37), токеном «семья»: запасной путь на случай
+ * потери аккаунта GitHub. Путь тот же, что у чтения
  * среза (`read.ts`): доступ, голова ветки по умолчанию, дерево — и все его
  * файлы. Причины — теми же словами. Файлы берутся текстом как есть, не
  * разбираются: моделей приложений метаприложение не знает (Я-11).
@@ -15,6 +16,7 @@ import type { App } from '../app/model.ts'
 import { plural, type DateStr } from '../shared/core/dates.ts'
 import { createClient, parseRepo, type TreeEntry } from '../shared/core/github.ts'
 import { explain, failureText, guard } from './read.ts'
+import { sameRepo } from './repos.ts'
 
 /** Версия формы файла. Растёт, если форма меняется. */
 export const COPY_FORMAT = 1
@@ -46,8 +48,29 @@ export type FamilyCopy = {
   apps: AppCopy[]
 }
 
+/**
+ * Свой репозиторий данных «Учёта» (Р-37): имя — своё название (Р-03),
+ * репозиторий — из общей базы устройства по своему `dbName`. Не вписан или
+ * база не открылась — причина: в файле он с ней, как нечитаемое приложение.
+ */
+export type OwnRepo = Pick<App, 'name' | 'dataRepo'> | { name: string; failed: string }
+
+/** Причина, когда своё имя репозитория данных не вписано. */
+export const OWN_NOT_SET = 'репозиторий данных не вписан: «Настройки» → «Синхронизация»'
+/** Причина, когда общая база устройства не открылась. */
+export const OWN_UNKNOWN = 'общая база устройства не открылась: имя репозитория данных не узнать'
+
+/** Свой репозиторий из имён общей базы; `null` — база не открылась. */
+export function ownRepo(name: string, repos: Readonly<Record<string, string>> | null, dbName: string): OwnRepo {
+  if (repos === null) return { name, failed: OWN_UNKNOWN }
+  const dataRepo = repos[dbName]?.trim()
+  return dataRepo ? { name, dataRepo } : { name, failed: OWN_NOT_SET }
+}
+
 export type CopyOptions = {
   apps: readonly Pick<App, 'name' | 'dataRepo'>[]
+  /** Свой репозиторий — последним; уже есть в `apps` — второй раз не входит. */
+  own: OwnRepo
   token: string
   day: DateStr
   /** Подменяется в тестах. */
@@ -71,9 +94,15 @@ export function copyLine(app: AppCopy): string {
   return `в копии: ${count} ${plural(count, ['файл', 'файла', 'файлов'])}`
 }
 
-/** Собрать копию всех приложений. Не кидает: нечитаемое приложение — в копии с причиной. */
-export async function copyFamily({ apps, token, day, fetch = globalThis.fetch }: CopyOptions): Promise<FamilyCopy> {
-  const copies = await Promise.all(apps.map((app) => copyApp(app, token, fetch)))
+/**
+ * Собрать копию всех приложений и своего репозитория. Не кидает: нечитаемое
+ * приложение — в копии с причиной. Своё имя не узнано — запись с причиной
+ * и пустым `dataRepo`: форма файла та же.
+ */
+export async function copyFamily({ apps, own, token, day, fetch = globalThis.fetch }: CopyOptions): Promise<FamilyCopy> {
+  const extra = 'failed' in own || apps.some((app) => sameRepo(app.dataRepo, own.dataRepo)) ? [] : [own]
+  const copies = await Promise.all([...apps, ...extra].map((app) => copyApp(app, token, fetch)))
+  if ('failed' in own) copies.push({ name: own.name, dataRepo: '', failed: own.failed })
   return { format: COPY_FORMAT, takenOn: day, apps: copies }
 }
 
