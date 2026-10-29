@@ -170,6 +170,23 @@ describe('свой репозиторий данных в копии (Р-37)', (
     expect(ownRepo('Учёт', null, 'uchet')).toEqual({ name: 'Учёт', failed: OWN_UNKNOWN })
   })
 
+  it('«Семья» пуста — в копии только свой репозиторий, файл есть что скачать', async () => {
+    const github = fakeGitHub({ [OWN.dataRepo]: { files: OWN_FILES } })
+    const result = await copy(github, [], OWN)
+    expect(result.apps).toEqual([
+      { ...OWN, commit: expect.any(String), files: Object.entries(OWN_FILES).map(([path, text]) => ({ path, text })) },
+    ])
+    expect(anyCopied(result)).toBe(true)
+  })
+
+  it('«Семья» пуста и свой не вписан — в копии одна причина, скачивать нечего', async () => {
+    const github = fakeGitHub({})
+    const result = await copy(github, [], ownRepo('Учёт', {}, 'uchet'))
+    expect(result.apps).toEqual([{ name: 'Учёт', dataRepo: '', failed: OWN_NOT_SET }])
+    expect(anyCopied(result)).toBe(false)
+    expect(github.paths).toEqual([])
+  })
+
   it('токена в файле нет и у своего', async () => {
     const github = fakeGitHub({ [OWN.dataRepo]: { files: OWN_FILES } })
     const result = await copy(github, [], OWN)
