@@ -408,13 +408,9 @@ function FamilyCopySection() {
 
       {token === null && <p className="muted">Токена нет: впиши его в «Синхронизации» выше или в любом приложении семьи.</p>}
 
-      {token && apps?.length === 0 && (
-        <p className="muted">Копировать пока нечего: приложения добавляются во вкладке «{FAMILY_TAB.name}».</p>
-      )}
-
       {token && (
         <div className="row row--wrap">
-          <button type="button" className="btn" onClick={() => void save()} disabled={busy || !apps || apps.length === 0}>
+          <button type="button" className="btn" onClick={() => void save()} disabled={busy || !apps}>
             {busy ? 'Читаю репозитории…' : 'Скачать копию'}
           </button>
         </div>
